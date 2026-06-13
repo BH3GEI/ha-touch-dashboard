@@ -1,0 +1,8 @@
+target/
+*.log
+*.pid
+launchd.out
+launchd.err
+panel.png
+state.tsv
+.DS_Store

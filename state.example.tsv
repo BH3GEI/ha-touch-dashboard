@@ -1,0 +1,4 @@
+desk_lamp	虚拟米家台灯	书桌	light	0	65	#ffd36b	0	亮度映射到台灯色块
+lightstrip	虚拟米家灯带	电视墙	light	0	45	#4cc9f0	0	颜色和亮度映射到灯带色块
+air_purifier	虚拟米家空气净化器	客厅	fan	0	80	#7bd389	35	风速越高，色块脉冲越快
+xiaoai_scene	虚拟小爱音箱场景	语音	switch	0	75	#b692ff	0	模拟“小爱执行场景”开关
