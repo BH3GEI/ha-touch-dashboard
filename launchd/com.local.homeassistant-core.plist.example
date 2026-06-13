@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.local.homeassistant-core</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/mac/HomeAssistantCore/venv/bin/hass</string>
+    <string>-c</string>
+    <string>/Users/mac/HomeAssistantCore/config</string>
+    <string>--log-file</string>
+    <string>/Users/mac/HomeAssistantCore/home-assistant.log</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/mac/HomeAssistantCore</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/mac/HomeAssistantCore/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/mac/HomeAssistantCore/launchd.err</string>
+</dict>
+</plist>

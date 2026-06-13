@@ -19,6 +19,23 @@ path back into Home Assistant.
 The dashboard is optimized for touch screens: large scene buttons, large power
 targets, thick sliders, clear state words, and a mobile bottom action dock.
 
+## What's Included
+
+- Rust HTTP server and embedded touch dashboard: `src/main.rs`
+- Home Assistant virtual device package: `ha/virtual_mijia.yaml`
+- Minimal Home Assistant config example: `ha/configuration.example.yaml`
+- LaunchAgent templates for the Rust bridge and Home Assistant Core: `launchd/`
+- Seed device state: `state.example.tsv`
+- Deployment and validation docs: `docs/`
+
+## What's Not Included
+
+- Home Assistant Core virtual environment.
+- Live `state.tsv`.
+- Build outputs under `target/`.
+- launchd logs and screenshots.
+- Any GitHub, Home Assistant, or Apple credentials.
+
 ## Build
 
 ```bash
@@ -44,6 +61,8 @@ Install `ha/virtual_mijia.yaml` into:
 
 The package defines the template entities, HomeKit bridge filter, HA -> Rust
 REST commands, and Rust -> HA webhook sync guard.
+
+For the full setup path, see `docs/DEPLOYMENT.md`.
 
 ## Launchd
 
