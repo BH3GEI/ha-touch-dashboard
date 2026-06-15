@@ -45,13 +45,14 @@ It defines:
 - `input_boolean`, `input_number`, and `input_select` helpers.
 - Template entities:
   - `light.virtual_mijia_desk_lamp`
-  - `light.virtual_mijia_lightstrip`
   - `fan.virtual_mijia_air_purifier`
+  - `switch.virtual_mijia_tv`
+  - `switch.virtual_mijia_ac_companion`
   - `switch.virtual_mijia_xiaoai_scene`
 - Automations for HA -> Rust sync.
 - A webhook automation for Rust -> HA sync.
 - `input_boolean.virtual_mijia_sync_guard` to prevent sync loops.
-- HomeKit Bridge filter for exposing only these virtual entities.
+- HomeKit Bridge filter for exposing only these entities.
 
 ## Dashboard
 

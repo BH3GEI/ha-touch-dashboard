@@ -47,7 +47,7 @@ Create or update:
 Use `ha/configuration.example.yaml` as the minimal config. It enables packages,
 API, webhook, frontend, onboarding, and the services needed by this bridge.
 
-Install the virtual Mijia package:
+Install the Mijia package:
 
 ```bash
 mkdir -p /Users/mac/HomeAssistantCore/config/packages

@@ -25,18 +25,18 @@ lsof -nP -iTCP:51827 -sTCP:LISTEN
 Expected bridge health:
 
 ```json
-{"ok":true,"devices":4}
+{"ok":true,"devices":5}
 ```
 
 ## Dashboard Interaction
 
 Test at least:
 
-- Desktop viewport loads the dashboard with 4 device cards.
+- Desktop viewport loads the dashboard with 5 device cards.
 - Mobile viewport has no horizontal overflow.
 - Scene button updates all relevant devices.
 - Power button toggles a device.
-- Brightness slider submits on `change`.
+- Light brightness slider submits on `change`.
 - Fan speed slider turns the fan on when speed is greater than zero.
 - Browser console has no relevant errors.
 

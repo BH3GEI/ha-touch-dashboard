@@ -4,63 +4,81 @@ rest_command:
     method: post
     content_type: "application/x-www-form-urlencoded"
     payload: >-
-      on={{ on | default('') }}&brightness={{ brightness | default('') }}&color={{ color | default('') | urlencode }}&speed={{ speed | default('') }}&note={{ note | default('') | urlencode }}
+      on={{ on | default('') }}&brightness={{ brightness | default('') }}&volume={{ volume | default('') }}&temperature={{ temperature | default('') }}&color={{ color | default('') | urlencode }}&speed={{ speed | default('') }}&mode={{ mode | default('') | urlencode }}&note={{ note | default('') | urlencode }}
 
 input_boolean:
   virtual_mijia_desk_lamp_power:
-    name: 虚拟米家台灯电源
-  virtual_mijia_lightstrip_power:
-    name: 虚拟米家灯带电源
+    name: 米家台灯电源
   virtual_mijia_air_purifier_power:
-    name: 虚拟米家空气净化器电源
+    name: 米家空气净化器电源
+  virtual_mijia_tv_power:
+    name: 米家电视电源
+  virtual_mijia_ac_companion_power:
+    name: 米家空调伴侣电源
   virtual_mijia_xiaoai_scene_power:
-    name: 虚拟小爱音箱场景
+    name: 小爱音箱场景
   virtual_mijia_sync_guard:
-    name: 虚拟米家同步锁
+    name: 米家同步锁
     initial: off
 
 input_number:
   virtual_mijia_desk_lamp_brightness:
-    name: 虚拟米家台灯亮度
+    name: 米家台灯亮度
     min: 0
     max: 100
     step: 1
     mode: slider
     initial: 65
-  virtual_mijia_lightstrip_brightness:
-    name: 虚拟米家灯带亮度
-    min: 0
-    max: 100
-    step: 1
-    mode: slider
-    initial: 45
   virtual_mijia_air_purifier_speed:
-    name: 虚拟米家空气净化器风速
+    name: 米家空气净化器风速
     min: 0
     max: 100
     step: 5
     mode: slider
     initial: 35
+  virtual_mijia_tv_volume:
+    name: 米家电视音量
+    min: 0
+    max: 100
+    step: 1
+    mode: slider
+    initial: 35
+  virtual_mijia_ac_temperature:
+    name: 米家空调伴侣温度
+    min: 16
+    max: 30
+    step: 1
+    mode: box
+    initial: 24
+  virtual_mijia_ac_fan_speed:
+    name: 米家空调伴侣风量
+    min: 0
+    max: 100
+    step: 5
+    mode: slider
+    initial: 45
 
 input_select:
   virtual_mijia_desk_lamp_color:
-    name: 虚拟米家台灯颜色
+    name: 米家台灯颜色
     options:
       - warm
       - white
       - night
     initial: warm
-  virtual_mijia_lightstrip_color:
-    name: 虚拟米家灯带颜色
+  virtual_mijia_ac_mode:
+    name: 米家空调伴侣模式
     options:
-      - cyan
-      - purple
-      - sunset
-    initial: cyan
+      - cool
+      - heat
+      - dry
+      - fan
+      - auto
+    initial: cool
 
 template:
   - light:
-      - name: 虚拟米家台灯
+      - name: 米家台灯
         unique_id: virtual_mijia_desk_lamp
         default_entity_id: light.virtual_mijia_desk_lamp
         state: "{{ is_state('input_boolean.virtual_mijia_desk_lamp_power', 'on') }}"
@@ -79,27 +97,8 @@ template:
               entity_id: input_number.virtual_mijia_desk_lamp_brightness
             data:
               value: "{{ (brightness | int(0) * 100 / 255) | round(0) }}"
-      - name: 虚拟米家灯带
-        unique_id: virtual_mijia_lightstrip
-        default_entity_id: light.virtual_mijia_lightstrip
-        state: "{{ is_state('input_boolean.virtual_mijia_lightstrip_power', 'on') }}"
-        level: "{{ (states('input_number.virtual_mijia_lightstrip_brightness') | int(0) * 255 / 100) | int }}"
-        turn_on:
-          - service: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.virtual_mijia_lightstrip_power
-        turn_off:
-          - service: input_boolean.turn_off
-            target:
-              entity_id: input_boolean.virtual_mijia_lightstrip_power
-        set_level:
-          - service: input_number.set_value
-            target:
-              entity_id: input_number.virtual_mijia_lightstrip_brightness
-            data:
-              value: "{{ (brightness | int(0) * 100 / 255) | round(0) }}"
   - fan:
-      - name: 虚拟米家空气净化器
+      - name: 米家空气净化器
         unique_id: virtual_mijia_air_purifier
         default_entity_id: fan.virtual_mijia_air_purifier
         state: "{{ is_state('input_boolean.virtual_mijia_air_purifier_power', 'on') }}"
@@ -132,7 +131,31 @@ template:
             data:
               value: "{{ percentage | int(0) }}"
   - switch:
-      - name: 虚拟小爱音箱场景
+      - name: 米家电视
+        unique_id: virtual_mijia_tv
+        default_entity_id: switch.virtual_mijia_tv
+        state: "{{ is_state('input_boolean.virtual_mijia_tv_power', 'on') }}"
+        turn_on:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.virtual_mijia_tv_power
+        turn_off:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.virtual_mijia_tv_power
+      - name: 米家空调伴侣
+        unique_id: virtual_mijia_ac_companion
+        default_entity_id: switch.virtual_mijia_ac_companion
+        state: "{{ is_state('input_boolean.virtual_mijia_ac_companion_power', 'on') }}"
+        turn_on:
+          - service: input_boolean.turn_on
+            target:
+              entity_id: input_boolean.virtual_mijia_ac_companion_power
+        turn_off:
+          - service: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.virtual_mijia_ac_companion_power
+      - name: 小爱音箱场景
         unique_id: virtual_mijia_xiaoai_scene
         default_entity_id: switch.virtual_mijia_xiaoai_scene
         state: "{{ is_state('input_boolean.virtual_mijia_xiaoai_scene_power', 'on') }}"
@@ -168,30 +191,8 @@ automation:
           color: >-
             {% set map = {'warm':'#ffd36b','white':'#f8fafc','night':'#f97316'} %}
             {{ map[states('input_select.virtual_mijia_desk_lamp_color')] }}
-          note: HA 控制虚拟台灯
-  - alias: Virtual Mijia sync lightstrip to Rust bridge
-    id: virtual_mijia_sync_lightstrip
-    mode: restart
-    trigger:
-      - platform: state
-        entity_id:
-          - input_boolean.virtual_mijia_lightstrip_power
-          - input_number.virtual_mijia_lightstrip_brightness
-          - input_select.virtual_mijia_lightstrip_color
-    condition:
-      - condition: state
-        entity_id: input_boolean.virtual_mijia_sync_guard
-        state: "off"
-    action:
-      - service: rest_command.virtual_mijia_update
-        data:
-          device_id: lightstrip
-          on: "{{ is_state('input_boolean.virtual_mijia_lightstrip_power', 'on') }}"
-          brightness: "{{ states('input_number.virtual_mijia_lightstrip_brightness') | int(0) }}"
-          color: >-
-            {% set map = {'cyan':'#4cc9f0','purple':'#b692ff','sunset':'#fb7185'} %}
-            {{ map[states('input_select.virtual_mijia_lightstrip_color')] }}
-          note: HA 控制虚拟灯带
+          mode: "{{ states('input_select.virtual_mijia_desk_lamp_color') }}"
+          note: HA 控制台灯
   - alias: Virtual Mijia sync purifier to Rust bridge
     id: virtual_mijia_sync_air_purifier
     mode: restart
@@ -210,8 +211,53 @@ automation:
           device_id: air_purifier
           on: "{{ is_state('input_boolean.virtual_mijia_air_purifier_power', 'on') }}"
           speed: "{{ states('input_number.virtual_mijia_air_purifier_speed') | int(0) }}"
-          brightness: "{{ states('input_number.virtual_mijia_air_purifier_speed') | int(0) }}"
-          note: HA 控制虚拟空气净化器
+          mode: auto
+          note: HA 控制空气净化器
+  - alias: Virtual Mijia sync TV to Rust bridge
+    id: virtual_mijia_sync_tv
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_boolean.virtual_mijia_tv_power
+          - input_number.virtual_mijia_tv_volume
+    condition:
+      - condition: state
+        entity_id: input_boolean.virtual_mijia_sync_guard
+        state: "off"
+    action:
+      - service: rest_command.virtual_mijia_update
+        data:
+          device_id: tv
+          on: "{{ is_state('input_boolean.virtual_mijia_tv_power', 'on') }}"
+          volume: "{{ states('input_number.virtual_mijia_tv_volume') | int(0) }}"
+          brightness: "{{ states('input_number.virtual_mijia_tv_volume') | int(0) }}"
+          mode: media
+          note: HA 控制电视
+  - alias: Virtual Mijia sync AC companion to Rust bridge
+    id: virtual_mijia_sync_ac_companion
+    mode: restart
+    trigger:
+      - platform: state
+        entity_id:
+          - input_boolean.virtual_mijia_ac_companion_power
+          - input_number.virtual_mijia_ac_temperature
+          - input_number.virtual_mijia_ac_fan_speed
+          - input_select.virtual_mijia_ac_mode
+    condition:
+      - condition: state
+        entity_id: input_boolean.virtual_mijia_sync_guard
+        state: "off"
+    action:
+      - service: rest_command.virtual_mijia_update
+        data:
+          device_id: ac_companion
+          on: "{{ is_state('input_boolean.virtual_mijia_ac_companion_power', 'on') }}"
+          temperature: "{{ states('input_number.virtual_mijia_ac_temperature') | int(24) }}"
+          brightness: "{{ states('input_number.virtual_mijia_ac_temperature') | int(24) }}"
+          speed: "{{ states('input_number.virtual_mijia_ac_fan_speed') | int(0) }}"
+          mode: "{{ states('input_select.virtual_mijia_ac_mode') }}"
+          note: HA 控制空调伴侣
   - alias: Virtual Mijia sync Xiaoai scene to Rust bridge
     id: virtual_mijia_sync_xiaoai_scene
     mode: restart
@@ -229,7 +275,8 @@ automation:
           device_id: xiaoai_scene
           on: "{{ is_state('input_boolean.virtual_mijia_xiaoai_scene_power', 'on') }}"
           brightness: "{{ 100 if is_state('input_boolean.virtual_mijia_xiaoai_scene_power', 'on') else 20 }}"
-          note: HA 控制虚拟小爱场景
+          mode: scene
+          note: HA 控制小爱场景
   - alias: Virtual Mijia sync Rust dashboard to Home Assistant
     id: virtual_mijia_sync_rust_dashboard_to_ha
     mode: queued
@@ -241,6 +288,9 @@ automation:
     variables:
       device_id: "{{ trigger.json.id | default('') }}"
       color_value: "{{ trigger.json.color | default('') }}"
+      mode_value: "{{ trigger.json.mode | default('') }}"
+      volume_value: "{{ trigger.json.volume | default(trigger.json.brightness | default(0)) }}"
+      temperature_value: "{{ trigger.json.temperature | default(trigger.json.brightness | default(24)) }}"
     action:
       - service: input_boolean.turn_on
         target:
@@ -278,36 +328,6 @@ automation:
                     {% endif %}
           - conditions:
               - condition: template
-                value_template: "{{ device_id == 'lightstrip' }}"
-            sequence:
-              - choose:
-                  - conditions:
-                      - condition: template
-                        value_template: "{{ trigger.json.on | default(false) == true }}"
-                    sequence:
-                      - service: input_boolean.turn_on
-                        target:
-                          entity_id: input_boolean.virtual_mijia_lightstrip_power
-                default:
-                  - service: input_boolean.turn_off
-                    target:
-                      entity_id: input_boolean.virtual_mijia_lightstrip_power
-              - service: input_number.set_value
-                target:
-                  entity_id: input_number.virtual_mijia_lightstrip_brightness
-                data:
-                  value: "{{ trigger.json.brightness | int(0) }}"
-              - service: input_select.select_option
-                target:
-                  entity_id: input_select.virtual_mijia_lightstrip_color
-                data:
-                  option: >-
-                    {% if color_value == '#b692ff' %}purple
-                    {% elif color_value == '#fb7185' %}sunset
-                    {% else %}cyan
-                    {% endif %}
-          - conditions:
-              - condition: template
                 value_template: "{{ device_id == 'air_purifier' }}"
             sequence:
               - choose:
@@ -327,6 +347,63 @@ automation:
                   entity_id: input_number.virtual_mijia_air_purifier_speed
                 data:
                   value: "{{ trigger.json.speed | int(0) }}"
+          - conditions:
+              - condition: template
+                value_template: "{{ device_id == 'tv' }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ trigger.json.on | default(false) == true }}"
+                    sequence:
+                      - service: input_boolean.turn_on
+                        target:
+                          entity_id: input_boolean.virtual_mijia_tv_power
+                default:
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: input_boolean.virtual_mijia_tv_power
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.virtual_mijia_tv_volume
+                data:
+                  value: "{{ volume_value | int(0) }}"
+          - conditions:
+              - condition: template
+                value_template: "{{ device_id == 'ac_companion' }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ trigger.json.on | default(false) == true }}"
+                    sequence:
+                      - service: input_boolean.turn_on
+                        target:
+                          entity_id: input_boolean.virtual_mijia_ac_companion_power
+                default:
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: input_boolean.virtual_mijia_ac_companion_power
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.virtual_mijia_ac_temperature
+                data:
+                  value: "{{ temperature_value | int(24) }}"
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.virtual_mijia_ac_fan_speed
+                data:
+                  value: "{{ trigger.json.speed | int(0) }}"
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.virtual_mijia_ac_mode
+                data:
+                  option: >-
+                    {% if mode_value in ['cool', 'heat', 'dry', 'fan', 'auto'] %}
+                      {{ mode_value }}
+                    {% else %}
+                      cool
+                    {% endif %}
           - conditions:
               - condition: template
                 value_template: "{{ device_id == 'xiaoai_scene' }}"
@@ -357,8 +434,11 @@ homekit:
     filter:
       include_entities:
         - light.virtual_mijia_desk_lamp
-        - light.virtual_mijia_lightstrip
         - fan.virtual_mijia_air_purifier
+        - switch.virtual_mijia_tv
+        - input_number.virtual_mijia_tv_volume
+        - switch.virtual_mijia_ac_companion
+        - input_number.virtual_mijia_ac_temperature
         - switch.virtual_mijia_xiaoai_scene
     entity_config:
       fan.virtual_mijia_air_purifier:

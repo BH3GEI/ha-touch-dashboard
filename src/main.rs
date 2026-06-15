@@ -18,6 +18,7 @@ struct Device {
     brightness: u8,
     color: String,
     speed: u8,
+    mode: String,
     note: String,
 }
 
@@ -31,7 +32,7 @@ fn main() -> std::io::Result<()> {
     let devices = Arc::new(Mutex::new(load_devices(&state_path)));
     let listener = TcpListener::bind(&addr)?;
 
-    println!("Virtual Mijia bridge listening on http://{addr}");
+    println!("Mijia bridge listening on http://{addr}");
     println!("State file: {}", state_path.display());
 
     for stream in listener.incoming() {
@@ -223,8 +224,21 @@ fn apply_update(device: &mut Device, params: &HashMap<String, String>) {
     if let Some(value) = params.get("brightness").and_then(|value| value.parse::<u8>().ok()) {
         device.brightness = value.min(100);
     }
+    if let Some(value) = params.get("volume").and_then(|value| value.parse::<u8>().ok()) {
+        device.brightness = value.min(100);
+    }
+    if let Some(value) = params.get("temperature").and_then(|value| value.parse::<u8>().ok()) {
+        device.brightness = if device.kind == "climate" {
+            value.clamp(16, 30)
+        } else {
+            value.min(100)
+        };
+    }
     if let Some(value) = params.get("speed").and_then(|value| value.parse::<u8>().ok()) {
         device.speed = value.min(100);
+    }
+    if let Some(value) = params.get("mode").filter(|value| !value.is_empty()) {
+        device.mode = value.chars().take(32).collect();
     }
     if let Some(value) = params.get("color").filter(|value| is_hex_color(value)) {
         device.color = value.to_string();
@@ -247,12 +261,15 @@ fn post_home_assistant_webhook(device: &Device) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(1)))?;
 
     let body = format!(
-        r#"{{"id":"{}","on":{},"brightness":{},"color":"{}","speed":{},"note":"{}"}}"#,
+        r#"{{"id":"{}","on":{},"brightness":{},"volume":{},"temperature":{},"color":"{}","speed":{},"mode":"{}","note":"{}"}}"#,
         escape_json(&device.id),
         device.on,
         device.brightness,
+        if device.kind == "tv" { device.brightness } else { 0 },
+        if device.kind == "climate" { device.brightness } else { 0 },
         escape_json(&device.color),
         device.speed,
+        escape_json(&device.mode),
         escape_json(&device.note)
     );
     let request = format!(
@@ -370,7 +387,10 @@ fn load_devices(path: &PathBuf) -> Vec<Device> {
                 device.color.clone()
             };
             device.speed = fields[7].parse::<u8>().unwrap_or(device.speed).min(100);
-            if let Some(note) = fields.get(8) {
+            if fields.len() >= 10 {
+                device.mode = fields[8].to_string();
+                device.note = fields[9].to_string();
+            } else if let Some(note) = fields.get(8) {
                 device.note = (*note).to_string();
             }
         }
@@ -383,7 +403,7 @@ fn save_devices(path: &PathBuf, devices: &[Device]) -> std::io::Result<()> {
     let mut output = String::new();
     for device in devices {
         output.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             device.id,
             device.name,
             device.room,
@@ -392,6 +412,7 @@ fn save_devices(path: &PathBuf, devices: &[Device]) -> std::io::Result<()> {
             device.brightness,
             device.color,
             device.speed,
+            device.mode.replace('\t', " "),
             device.note.replace('\t', " ")
         ));
     }
@@ -402,46 +423,62 @@ fn default_devices() -> Vec<Device> {
     vec![
         Device {
             id: "desk_lamp".to_string(),
-            name: "虚拟米家台灯".to_string(),
+            name: "米家台灯".to_string(),
             room: "书桌".to_string(),
             kind: "light".to_string(),
             on: false,
             brightness: 65,
             color: "#ffd36b".to_string(),
             speed: 0,
+            mode: "warm".to_string(),
             note: "亮度映射到台灯色块".to_string(),
         },
         Device {
-            id: "lightstrip".to_string(),
-            name: "虚拟米家灯带".to_string(),
-            room: "电视墙".to_string(),
-            kind: "light".to_string(),
-            on: false,
-            brightness: 45,
-            color: "#4cc9f0".to_string(),
-            speed: 0,
-            note: "颜色和亮度映射到灯带色块".to_string(),
-        },
-        Device {
             id: "air_purifier".to_string(),
-            name: "虚拟米家空气净化器".to_string(),
+            name: "米家空气净化器".to_string(),
             room: "客厅".to_string(),
             kind: "fan".to_string(),
             on: false,
-            brightness: 80,
+            brightness: 0,
             color: "#7bd389".to_string(),
             speed: 35,
+            mode: "auto".to_string(),
             note: "风速越高，色块脉冲越快".to_string(),
         },
         Device {
+            id: "tv".to_string(),
+            name: "米家电视".to_string(),
+            room: "客厅".to_string(),
+            kind: "tv".to_string(),
+            on: false,
+            brightness: 35,
+            color: "#60a5fa".to_string(),
+            speed: 0,
+            mode: "media".to_string(),
+            note: "音量映射到电视控制".to_string(),
+        },
+        Device {
+            id: "ac_companion".to_string(),
+            name: "米家空调伴侣".to_string(),
+            room: "卧室".to_string(),
+            kind: "climate".to_string(),
+            on: false,
+            brightness: 24,
+            color: "#38bdf8".to_string(),
+            speed: 45,
+            mode: "cool".to_string(),
+            note: "温度、模式和风量映射到空调伴侣".to_string(),
+        },
+        Device {
             id: "xiaoai_scene".to_string(),
-            name: "虚拟小爱音箱场景".to_string(),
+            name: "小爱音箱场景".to_string(),
             room: "语音".to_string(),
             kind: "switch".to_string(),
             on: false,
             brightness: 75,
             color: "#b692ff".to_string(),
             speed: 0,
+            mode: "scene".to_string(),
             note: "模拟“小爱执行场景”开关".to_string(),
         },
     ]
@@ -454,15 +491,18 @@ fn devices_json(devices: &[Device]) -> String {
 
 fn device_json(device: &Device) -> String {
     format!(
-        r#"{{"id":"{}","name":"{}","room":"{}","kind":"{}","on":{},"brightness":{},"color":"{}","speed":{},"note":"{}"}}"#,
+        r#"{{"id":"{}","name":"{}","room":"{}","kind":"{}","on":{},"brightness":{},"volume":{},"temperature":{},"color":"{}","speed":{},"mode":"{}","note":"{}"}}"#,
         escape_json(&device.id),
         escape_json(&device.name),
         escape_json(&device.room),
         escape_json(&device.kind),
         device.on,
         device.brightness,
+        if device.kind == "tv" { device.brightness } else { 0 },
+        if device.kind == "climate" { device.brightness } else { 0 },
         escape_json(&device.color),
         device.speed,
+        escape_json(&device.mode),
         escape_json(&device.note)
     )
 }
@@ -488,7 +528,7 @@ fn html() -> String {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>虚拟米家中控</title>
+  <title>米家中控</title>
   <style>
     :root {
       color-scheme: light;
@@ -928,6 +968,54 @@ fn html() -> String {
       background: #fff;
       padding: 4px;
     }
+    .action-buttons,
+    .mode-buttons,
+    .temperature-stepper {
+      display: grid;
+      gap: 8px;
+    }
+    .action-buttons {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .mode-buttons {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .temperature-stepper {
+      grid-template-columns: 56px minmax(0, 1fr) 56px;
+      align-items: center;
+      min-height: 58px;
+      padding: 8px 12px;
+      border: 1px solid #e5eaf1;
+      border-radius: var(--radius);
+      background: var(--surface-soft);
+    }
+    .mini-button,
+    .mode-button {
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+      color: #344054;
+      font-size: 14px;
+      font-weight: 740;
+    }
+    .mini-button:active,
+    .mode-button:active {
+      transform: scale(.97);
+    }
+    .mode-button.is-active {
+      border-color: rgba(23, 178, 106, .35);
+      background: var(--green);
+      color: #fff;
+    }
+    .temperature-readout {
+      display: grid;
+      place-items: center;
+      min-height: 48px;
+      color: #111827;
+      font-size: 24px;
+      font-weight: 800;
+    }
     .note {
       display: flex;
       align-items: center;
@@ -1029,7 +1117,7 @@ fn html() -> String {
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">米</div>
         <div>
-          <h1>虚拟米家中控</h1>
+          <h1>米家中控</h1>
           <div class="subtitle">触摸屏控制台 · Rust Bridge · Home Assistant 同步</div>
         </div>
       </div>
@@ -1049,7 +1137,7 @@ fn html() -> String {
             <span class="scene-icon" aria-hidden="true">□</span><span class="scene-copy"><strong>全关</strong><span>离家或睡前快速收束</span></span>
           </button>
           <button class="scene-button" data-scene="movie" style="--scene-color:var(--cyan);--scene-border:#67e8f9;--scene-bg:#ecfeff">
-            <span class="scene-icon" aria-hidden="true">▣</span><span class="scene-copy"><strong>影院</strong><span>灯带亮起，主灯压暗</span></span>
+            <span class="scene-icon" aria-hidden="true">▣</span><span class="scene-copy"><strong>影院</strong><span>电视开启，主灯压暗</span></span>
           </button>
           <button class="scene-button" data-scene="night" style="--scene-color:var(--amber);--scene-border:#fcd34d;--scene-bg:#fffbeb">
             <span class="scene-icon" aria-hidden="true">☾</span><span class="scene-copy"><strong>夜间</strong><span>低亮度，净化器轻档</span></span>
@@ -1086,30 +1174,35 @@ fn html() -> String {
 
     function deviceSymbol(device) {
       if (device.id === 'desk_lamp') return '▱';
-      if (device.id === 'lightstrip') return '◌';
       if (device.id === 'air_purifier') return '✺';
+      if (device.id === 'tv') return '▭';
+      if (device.id === 'ac_companion') return '❄';
       return '▦';
     }
 
     function deviceTypeLabel(device) {
       if (device.kind === 'light') return '灯光';
       if (device.kind === 'fan') return '净化';
+      if (device.kind === 'tv') return '电视';
+      if (device.kind === 'climate') return '空调';
       return '场景';
+    }
+
+    function climateModeLabel(mode) {
+      const labels = { cool: '制冷', heat: '制热', dry: '除湿', fan: '送风', auto: '自动' };
+      return labels[mode] || '自动';
     }
 
     function summaryCards(devices) {
       const active = devices.filter(device => device.on).length;
-      const litDevices = devices.filter(device => device.kind !== 'switch');
-      const averageBrightness = litDevices.length
-        ? Math.round(litDevices.reduce((sum, device) => sum + device.brightness, 0) / litDevices.length)
-        : 0;
       const purifier = devices.find(device => device.id === 'air_purifier');
-      const xiaoai = devices.find(device => device.id === 'xiaoai_scene');
+      const tv = devices.find(device => device.id === 'tv');
+      const ac = devices.find(device => device.id === 'ac_companion');
       const cards = [
         ['⏻', active, '设备开启中', 'var(--green)'],
-        ['☀', averageBrightness + '%', '平均亮度', 'var(--amber)'],
+        ['▭', tv && tv.on ? (tv.volume || tv.brightness) + '%' : '待机', '电视音量', 'var(--blue)'],
         ['✺', (purifier ? Math.ceil(purifier.speed / 25) : 0) + '档', '净化器风速', 'var(--cyan)'],
-        ['⌁', xiaoai && xiaoai.on ? '执行中' : '待机', '小爱场景', 'var(--violet)']
+        ['❄', ac && ac.on ? (ac.temperature || ac.brightness) + '°C' : '待机', '空调伴侣', 'var(--violet)']
       ];
       overview.innerHTML = cards.map(([icon, value, label, color]) => `
         <article class="stat-card">
@@ -1118,20 +1211,75 @@ fn html() -> String {
         </article>`).join('');
     }
 
+    function sliderControl(device, label, action, value, suffix = '%') {
+      return `<div class="control-row"><div class="control-label">${label}</div><input aria-label="${device.name}${label}" type="range" min="0" max="100" value="${value}" data-action="${action}" data-id="${device.id}"><div class="control-value">${value}${suffix}</div></div>`;
+    }
+
+    function colorControl(device) {
+      return `<div class="color-row"><div class="control-label">颜色</div><div class="control-value">${device.color}</div><input aria-label="${device.name}颜色" type="color" value="${device.color}" data-action="color" data-id="${device.id}"></div>`;
+    }
+
+    function tvControls(device) {
+      const volume = Number(device.volume || device.brightness || 0);
+      return `
+        ${sliderControl(device, '音量', 'volume', volume)}
+        <div class="action-buttons" aria-label="${device.name}音量快捷控制">
+          <button class="mini-button" data-action="volume-step" data-id="${device.id}" data-volume="0">静音</button>
+          <button class="mini-button" data-action="volume-step" data-id="${device.id}" data-delta="-5" data-current="${volume}">-</button>
+          <button class="mini-button" data-action="volume-step" data-id="${device.id}" data-delta="5" data-current="${volume}">+</button>
+        </div>`;
+    }
+
+    function climateControls(device) {
+      const temperature = Number(device.temperature || device.brightness || 24);
+      const fanSpeed = Number(device.speed || 0);
+      const modes = [['cool', '制冷'], ['heat', '制热'], ['dry', '除湿'], ['fan', '送风'], ['auto', '自动']];
+      return `
+        <div class="temperature-stepper" aria-label="${device.name}温度控制">
+          <button class="mini-button" data-action="temp-step" data-id="${device.id}" data-delta="-1" data-current="${temperature}">-</button>
+          <div class="temperature-readout">${temperature}°C</div>
+          <button class="mini-button" data-action="temp-step" data-id="${device.id}" data-delta="1" data-current="${temperature}">+</button>
+        </div>
+        ${sliderControl(device, '风量', 'speed', fanSpeed)}
+        <div class="mode-buttons" aria-label="${device.name}模式">
+          ${modes.map(([mode, label]) => `<button class="mode-button ${device.mode === mode ? 'is-active' : ''}" data-action="mode" data-id="${device.id}" data-mode="${mode}">${label}</button>`).join('')}
+        </div>`;
+    }
+
+    function deviceControls(device) {
+      if (device.kind === 'light') {
+        return `${sliderControl(device, '亮度', 'brightness', device.brightness)}${colorControl(device)}`;
+      }
+      if (device.kind === 'fan') {
+        return sliderControl(device, '风速', 'speed', device.speed);
+      }
+      if (device.kind === 'tv') {
+        return tvControls(device);
+      }
+      if (device.kind === 'climate') {
+        return climateControls(device);
+      }
+      return `<div class="control-row"><div class="control-label">场景</div><div></div><div class="control-value">${device.on ? '执行中' : '待机'}</div></div>`;
+    }
+
+    function visualLevel(device) {
+      if (device.kind === 'fan') return device.speed;
+      if (device.kind === 'tv') return device.volume || device.brightness;
+      if (device.kind === 'climate') return device.on ? clamp(device.speed || 45, 18, 100) : 8;
+      if (device.kind === 'switch') return device.on ? 76 : 8;
+      return device.brightness;
+    }
+
     function deviceCard(device) {
-      const activeBrightness = device.on ? clamp(device.brightness, 8, 100) : 8;
+      const activeBrightness = device.on ? clamp(visualLevel(device), 8, 100) : 8;
       const opacity = device.on ? activeBrightness / 100 : 0.20;
       const brightness = device.on ? 0.74 + activeBrightness / 125 : 0.54;
       const saturation = device.on ? 1.15 : 0.38;
       const spinSeconds = Math.max(0.45, 3.2 - (device.speed / 100) * 2.6).toFixed(2) + 's';
-      const stateText = device.on ? '开' : (device.kind === 'switch' ? '待机' : '关');
+      const stateText = device.on
+        ? (device.kind === 'climate' ? climateModeLabel(device.mode) : '开')
+        : (device.kind === 'switch' || device.kind === 'tv' ? '待机' : '关');
       const stateColor = device.on ? 'var(--green)' : '#64748b';
-      const speedControl = device.kind === 'fan'
-        ? `<div class="control-row"><div class="control-label">风速</div><input aria-label="${device.name}风速" type="range" min="0" max="100" value="${device.speed}" data-action="speed" data-id="${device.id}"><div class="control-value">${device.speed}%</div></div>`
-        : '';
-      const colorControl = device.kind !== 'fan'
-        ? `<div class="color-row"><div class="control-label">颜色</div><div class="control-value">${device.color}</div><input aria-label="${device.name}颜色" type="color" value="${device.color}" data-action="color" data-id="${device.id}"></div>`
-        : '';
       return `
         <article class="device-card" data-kind="${device.kind}" data-on="${device.on}"
           style="--device-color:${device.color};--device-opacity:${opacity};--device-brightness:${brightness};--device-saturation:${saturation};--spin-speed:${spinSeconds};--state-color:${stateColor}">
@@ -1146,9 +1294,7 @@ fn html() -> String {
               <button class="power-button" aria-label="${device.name}${device.on ? '关闭' : '开启'}" data-action="toggle" data-id="${device.id}" data-on="${device.on}">⏻</button>
             </div>
             <div class="control-stack">
-              <div class="control-row"><div class="control-label">亮度</div><input aria-label="${device.name}亮度" type="range" min="0" max="100" value="${device.brightness}" data-action="brightness" data-id="${device.id}"><div class="control-value">${device.brightness}%</div></div>
-              ${speedControl}
-              ${colorControl}
+              ${deviceControls(device)}
             </div>
             <div class="note">${device.note}</div>
           </div>
@@ -1186,14 +1332,37 @@ fn html() -> String {
       updateDevice(target.dataset.id, { on: target.dataset.on !== 'true' }).catch(showError);
     });
 
+    document.addEventListener('click', event => {
+      const target = event.target.closest('[data-action="volume-step"],[data-action="temp-step"],[data-action="mode"]');
+      if (!target) return;
+      if (target.dataset.action === 'volume-step') {
+        const volume = target.dataset.volume !== undefined
+          ? Number(target.dataset.volume)
+          : Number(target.dataset.current || 0) + Number(target.dataset.delta || 0);
+        updateDevice(target.dataset.id, { volume: clamp(volume, 0, 100), on: true, note: '网页快捷操作：电视音量' }).catch(showError);
+      }
+      if (target.dataset.action === 'temp-step') {
+        const temperature = Number(target.dataset.current || 24) + Number(target.dataset.delta || 0);
+        updateDevice(target.dataset.id, { temperature: clamp(temperature, 16, 30), on: true, note: '网页快捷操作：空调温度' }).catch(showError);
+      }
+      if (target.dataset.action === 'mode') {
+        updateDevice(target.dataset.id, { mode: target.dataset.mode, on: true, note: '网页快捷操作：空调模式' }).catch(showError);
+      }
+    });
+
     document.addEventListener('change', event => {
       const target = event.target;
       if (!target.dataset.action) return;
+      const card = target.closest('.device-card');
+      const kind = card ? card.dataset.kind : '';
       if (target.dataset.action === 'brightness') {
-        updateDevice(target.dataset.id, { brightness: target.value }).catch(showError);
+        updateDevice(target.dataset.id, { brightness: target.value, on: Number(target.value) > 0 }).catch(showError);
       }
       if (target.dataset.action === 'speed') {
-        updateDevice(target.dataset.id, { speed: target.value, on: Number(target.value) > 0 }).catch(showError);
+        updateDevice(target.dataset.id, { speed: target.value, on: kind === 'fan' ? Number(target.value) > 0 : true }).catch(showError);
+      }
+      if (target.dataset.action === 'volume') {
+        updateDevice(target.dataset.id, { volume: target.value, on: true, note: '网页快捷操作：电视音量' }).catch(showError);
       }
       if (target.dataset.action === 'color') {
         updateDevice(target.dataset.id, { color: target.value }).catch(showError);
@@ -1210,30 +1379,34 @@ fn html() -> String {
       const scenes = {
         'all-on': [
           ['desk_lamp', { on: true, brightness: 90, color: '#ffd36b', note: '网页快捷操作：全开' }],
-          ['lightstrip', { on: true, brightness: 82, color: '#4cc9f0', note: '网页快捷操作：全开' }],
-          ['air_purifier', { on: true, brightness: 55, speed: 55, note: '网页快捷操作：全开' }],
+          ['air_purifier', { on: true, speed: 55, note: '网页快捷操作：全开' }],
+          ['tv', { on: true, volume: 35, note: '网页快捷操作：全开' }],
+          ['ac_companion', { on: true, temperature: 24, speed: 50, mode: 'cool', note: '网页快捷操作：全开' }],
           ['xiaoai_scene', { on: true, brightness: 90, note: '网页快捷操作：全开' }]
         ],
         'all-off': [
           ['desk_lamp', { on: false, brightness: 25, note: '网页快捷操作：全关' }],
-          ['lightstrip', { on: false, brightness: 25, note: '网页快捷操作：全关' }],
-          ['air_purifier', { on: false, brightness: 20, speed: 0, note: '网页快捷操作：全关' }],
+          ['air_purifier', { on: false, speed: 0, note: '网页快捷操作：全关' }],
+          ['tv', { on: false, volume: 0, note: '网页快捷操作：全关' }],
+          ['ac_companion', { on: false, temperature: 24, speed: 0, mode: 'cool', note: '网页快捷操作：全关' }],
           ['xiaoai_scene', { on: false, brightness: 20, note: '网页快捷操作：全关' }]
         ],
         'movie': [
           ['desk_lamp', { on: false, brightness: 12, color: '#f97316', note: '网页快捷操作：影院模式' }],
-          ['lightstrip', { on: true, brightness: 35, color: '#b692ff', note: '网页快捷操作：影院模式' }],
-          ['air_purifier', { on: true, brightness: 25, speed: 25, note: '网页快捷操作：影院模式' }],
+          ['air_purifier', { on: true, speed: 25, note: '网页快捷操作：影院模式' }],
+          ['tv', { on: true, volume: 32, note: '网页快捷操作：影院模式' }],
+          ['ac_companion', { on: true, temperature: 25, speed: 25, mode: 'cool', note: '网页快捷操作：影院模式' }],
           ['xiaoai_scene', { on: true, brightness: 65, color: '#b692ff', note: '网页快捷操作：影院模式' }]
         ],
         'night': [
           ['desk_lamp', { on: true, brightness: 18, color: '#f97316', note: '网页快捷操作：夜间模式' }],
-          ['lightstrip', { on: false, brightness: 10, color: '#4cc9f0', note: '网页快捷操作：夜间模式' }],
-          ['air_purifier', { on: true, brightness: 20, speed: 18, note: '网页快捷操作：夜间模式' }],
+          ['air_purifier', { on: true, speed: 18, note: '网页快捷操作：夜间模式' }],
+          ['tv', { on: false, volume: 0, note: '网页快捷操作：夜间模式' }],
+          ['ac_companion', { on: true, temperature: 26, speed: 20, mode: 'cool', note: '网页快捷操作：夜间模式' }],
           ['xiaoai_scene', { on: false, brightness: 20, note: '网页快捷操作：夜间模式' }]
         ],
         'purify': [
-          ['air_purifier', { on: true, brightness: 100, speed: 100, note: '网页快捷操作：净化器强档' }]
+          ['air_purifier', { on: true, speed: 100, note: '网页快捷操作：净化器强档' }]
         ]
       };
       if (trigger) trigger.classList.add('is-running');

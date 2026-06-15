@@ -1,6 +1,6 @@
 # HA Touch Dashboard
 
-Touch-first Rust dashboard for local Home Assistant / HomeKit virtual Mijia
+Touch-first Rust dashboard for local Home Assistant / HomeKit Mijia
 testing. It exposes a web control panel, a small HTTP API, and a webhook sync
 path back into Home Assistant.
 
@@ -11,10 +11,11 @@ path back into Home Assistant.
 
 ## What It Controls
 
-- 虚拟米家台灯
-- 虚拟米家灯带
-- 虚拟米家空气净化器
-- 虚拟小爱音箱场景
+- 米家台灯
+- 米家空气净化器
+- 米家电视
+- 米家空调伴侣
+- 小爱音箱场景
 
 The dashboard is optimized for touch screens: large scene buttons, large power
 targets, thick sliders, clear state words, and a mobile bottom action dock.
@@ -22,7 +23,7 @@ targets, thick sliders, clear state words, and a mobile bottom action dock.
 ## What's Included
 
 - Rust HTTP server and embedded touch dashboard: `src/main.rs`
-- Home Assistant virtual device package: `ha/virtual_mijia.yaml`
+- Home Assistant package: `ha/virtual_mijia.yaml`
 - Minimal Home Assistant config example: `ha/configuration.example.yaml`
 - LaunchAgent templates for the Rust bridge and Home Assistant Core: `launchd/`
 - Seed device state: `state.example.tsv`
