@@ -8,11 +8,13 @@ the Home Assistant package, launchd templates, and reproducible setup notes.
 ```text
 Touch dashboard browser
   -> Rust bridge HTTP API on :8787
-    -> state.tsv persisted device state
-    -> Home Assistant webhook on :8123
-      -> input helpers and template entities
-      -> HomeKit Bridge on :51827
-        -> Apple Home / Siri
+    -> Home Assistant REST API on :8123
+      -> Xiaomi Home entities
+      -> real TV / XiaoAI / AC / curtain / sensors
+    -> state.tsv persisted fallback device state
+    -> Home Assistant webhook on :8123 for fallback template sync
+    -> HomeKit Bridge on :51827 and TV accessory on :51828
+      -> Apple Home / Siri
 ```
 
 ## Rust Bridge
@@ -25,8 +27,10 @@ Responsibilities:
 - Serve `GET /api/health`.
 - Serve `GET /api/devices`.
 - Accept `POST /api/devices/<id>` form updates.
-- Persist state to `state.tsv`.
-- POST each device update back into Home Assistant through:
+- When a Home Assistant token is available, read real Xiaomi entity states from
+  `/api/states` and call HA services for controls.
+- Persist fallback state to `state.tsv`.
+- POST fallback device updates back into Home Assistant through:
 
 ```text
 /api/webhook/virtual_mijia_bridge_state_b53b516a99ba5cf173601fd8ff7298e0
@@ -41,8 +45,8 @@ Source: `ha/virtual_mijia.yaml`
 
 It defines:
 
-- `rest_command.virtual_mijia_update` for HA -> Rust updates.
-- `input_boolean`, `input_number`, and `input_select` helpers.
+- `rest_command.virtual_mijia_update` for fallback HA -> Rust updates.
+- `input_boolean`, `input_number`, and `input_select` fallback helpers.
 - Template entities:
   - `light.virtual_mijia_desk_lamp`
   - `fan.virtual_mijia_air_purifier`
@@ -52,7 +56,16 @@ It defines:
 - Automations for HA -> Rust sync.
 - A webhook automation for Rust -> HA sync.
 - `input_boolean.virtual_mijia_sync_guard` to prevent sync loops.
-- HomeKit Bridge filter for exposing only these entities.
+- Scripts for Siri/HomeKit actions:
+  - `script.mijia_tv_volume_up`
+  - `script.mijia_tv_volume_down`
+  - `script.mijia_xiaoai_wake`
+  - `script.mijia_xiaoai_play_music`
+  - `script.mijia_xiaoai_broadcast`
+- HomeKit Bridge filter for real AC, curtain, temperature/humidity sensors, and
+  Siri scripts on TCP `51827`.
+- A separate TV HomeKit accessory on TCP `51828` because HomeKit requires
+  television media players to run in accessory mode.
 
 ## Dashboard
 

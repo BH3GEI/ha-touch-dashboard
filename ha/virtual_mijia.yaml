@@ -426,20 +426,92 @@ automation:
         target:
           entity_id: input_boolean.virtual_mijia_sync_guard
 
+script:
+  mijia_tv_volume_up:
+    alias: 小米电视音量加
+    mode: single
+    sequence:
+      - service: button.press
+        target:
+          entity_id: button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_volume_up_a_7_12
+  mijia_tv_volume_down:
+    alias: 小米电视音量减
+    mode: single
+    sequence:
+      - service: button.press
+        target:
+          entity_id: button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_volume_down_a_7_11
+  mijia_xiaoai_wake:
+    alias: 唤醒小爱
+    mode: single
+    sequence:
+      - service: button.press
+        target:
+          entity_id: button.xiaomi_cn_2037162573_x4b_wake_up_a_5_1
+  mijia_xiaoai_play_music:
+    alias: 小爱播放音乐
+    mode: single
+    sequence:
+      - service: button.press
+        target:
+          entity_id: button.xiaomi_cn_2037162573_x4b_play_music_a_5_5
+  mijia_xiaoai_broadcast:
+    alias: 小爱播报中控状态
+    mode: single
+    sequence:
+      - service: notify.send_message
+        target:
+          entity_id: notify.xiaomi_cn_2037162573_x4b_play_text_a_5_3
+        data:
+          message: 中控已连接，可以用 Siri 触发小爱了
+
 homekit:
-  - name: HA Mijia Test
+  - name: HA Mijia
     port: 51827
     advertise_ip:
       - 192.168.3.37
     filter:
       include_entities:
-        - light.virtual_mijia_desk_lamp
-        - fan.virtual_mijia_air_purifier
-        - switch.virtual_mijia_tv
-        - input_number.virtual_mijia_tv_volume
-        - switch.virtual_mijia_ac_companion
-        - input_number.virtual_mijia_ac_temperature
-        - switch.virtual_mijia_xiaoai_scene
+        - climate.lumi_cn_974076238_mcn02
+        - cover.czmydz_cn_2143837107_mym1_s_2_curtain
+        - sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_temperature_p_2_1001
+        - sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_relative_humidity_p_2_1002
+        - script.mijia_tv_volume_up
+        - script.mijia_tv_volume_down
+        - script.mijia_xiaoai_wake
+        - script.mijia_xiaoai_play_music
+        - script.mijia_xiaoai_broadcast
     entity_config:
-      fan.virtual_mijia_air_purifier:
-        type: air_purifier
+      climate.lumi_cn_974076238_mcn02:
+        name: 二楼主卧空调
+      cover.czmydz_cn_2143837107_mym1_s_2_curtain:
+        name: 隔断帘
+      sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_temperature_p_2_1001:
+        name: 厨房温度
+      sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_relative_humidity_p_2_1002:
+        name: 厨房湿度
+      script.mijia_tv_volume_up:
+        name: 小米电视音量加
+      script.mijia_tv_volume_down:
+        name: 小米电视音量减
+      script.mijia_xiaoai_wake:
+        name: 唤醒小爱
+      script.mijia_xiaoai_play_music:
+        name: 小爱播放音乐
+      script.mijia_xiaoai_broadcast:
+        name: 小爱播报中控状态
+  - name: Mijia TV
+    port: 51828
+    mode: accessory
+    advertise_ip:
+      - 192.168.3.37
+    filter:
+      include_entities:
+        - media_player.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1
+    entity_config:
+      media_player.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1:
+        name: 客厅小米电视
+        feature_list:
+          - feature: on_off
+          - feature: play_pause
+          - feature: toggle_mute

@@ -63,6 +63,26 @@ Validate:
   -c /Users/mac/HomeAssistantCore/config
 ```
 
+## Connect Xiaomi Home
+
+Install the official `xiaomi_home` custom integration into:
+
+```text
+/Users/mac/HomeAssistantCore/config/custom_components/xiaomi_home
+```
+
+Complete the Xiaomi OAuth flow from Home Assistant, select the desired homes,
+and confirm these entities exist before using the real-device dashboard:
+
+```text
+media_player.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1
+media_player.xiaomi_cn_2037162573_x4b
+climate.lumi_cn_974076238_mcn02
+cover.czmydz_cn_2143837107_mym1_s_2_curtain
+sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_temperature_p_2_1001
+sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_relative_humidity_p_2_1002
+```
+
 ## Build The Rust Bridge
 
 ```bash
@@ -75,7 +95,8 @@ Manual run:
 ```bash
 ./target/release/ha-virtual-mijia-bridge \
   --addr 0.0.0.0:8787 \
-  --state /Users/mac/repos/ha-touch-dashboard/state.tsv
+  --state /Users/mac/repos/ha-touch-dashboard/state.tsv \
+  --ha-token-file /Users/mac/HomeAssistantCore/HA-OWNER-ACCESS-TOKEN.txt
 ```
 
 ## Launchd Services
@@ -114,6 +135,7 @@ LAN dashboard:  http://192.168.3.37:8787/
 Health API:     http://127.0.0.1:8787/api/health
 Home Assistant: http://127.0.0.1:8123/
 HomeKit bridge: TCP 51827
+HomeKit TV accessory: TCP 51828
 ```
 
 ## Current Known Warning
@@ -124,5 +146,6 @@ The current Mac mini logs may show a zeroconf/mDNS warning:
 No route to host
 ```
 
-HomeKit Bridge still listens on TCP `51827`, but Apple Home pairing should be
-tested from an iPhone on the same LAN because mDNS is part of discovery.
+HomeKit Bridge listens on TCP `51827`, and the TV accessory listens on TCP
+`51828`. Apple Home pairing should be tested from an iPhone on the same LAN
+because mDNS is part of discovery.

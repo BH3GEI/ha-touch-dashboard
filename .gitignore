@@ -1,4 +1,7 @@
 target/
+node_modules/
+test-results/
+playwright-report/
 *.log
 *.pid
 launchd.out

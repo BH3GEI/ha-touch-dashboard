@@ -9,6 +9,8 @@ cargo build --release
 /Users/mac/HomeAssistantCore/venv/bin/hass \
   --script check_config \
   -c /Users/mac/HomeAssistantCore/config
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
+BASE_URL=http://127.0.0.1:8787 npx playwright test
 ```
 
 ## Service Health
@@ -20,12 +22,13 @@ curl -sS -o /dev/null -D - http://127.0.0.1:8123/
 lsof -nP -iTCP:8787 -sTCP:LISTEN
 lsof -nP -iTCP:8123 -sTCP:LISTEN
 lsof -nP -iTCP:51827 -sTCP:LISTEN
+lsof -nP -iTCP:51828 -sTCP:LISTEN
 ```
 
 Expected bridge health:
 
 ```json
-{"ok":true,"devices":5}
+{"ok":true,"devices":5,"home_assistant":"configured"}
 ```
 
 ## Dashboard Interaction
@@ -34,11 +37,16 @@ Test at least:
 
 - Desktop viewport loads the dashboard with 5 device cards.
 - Mobile viewport has no horizontal overflow.
-- Scene button updates all relevant devices.
-- Power button toggles a device.
-- Light brightness slider submits on `change`.
-- Fan speed slider turns the fan on when speed is greater than zero.
+- The visible cards are the real Xiaomi devices: TV, XiaoAI, AC, curtain, and
+  temperature/humidity sensor.
+- TV and XiaoAI volume sliders submit on `change`.
+- AC temperature, mode, and fan controls render.
+- Curtain position slider and open/stop/close buttons render.
+- The temperature/humidity sensor is read-only.
 - Browser console has no relevant errors.
+
+Avoid triggering XiaoAI broadcast or physical device changes during a passive
+smoke test unless that side effect is intentional.
 
 ## Rust -> HA Sync
 
@@ -69,8 +77,8 @@ input_boolean.virtual_mijia_sync_guard off
 
 ## HA -> Rust Sync
 
-After Home Assistant onboarding is complete, use HA UI or API to change one of
-the template entities/helpers, then confirm the Rust API state changes:
+After Home Assistant onboarding and Xiaomi OAuth are complete, confirm the Rust
+API returns real Xiaomi devices:
 
 ```bash
 curl -sS http://127.0.0.1:8787/api/devices
