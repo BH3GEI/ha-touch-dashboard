@@ -477,17 +477,71 @@ impl HaClient {
         );
         stream.write_all(request.as_bytes())?;
 
-        let mut response = String::new();
-        stream.read_to_string(&mut response)?;
-        let Some((headers, response_body)) = response.split_once("\r\n\r\n") else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid Home Assistant response",
-            ));
-        };
-        let status = headers.lines().next().unwrap_or_default().to_string();
-        Ok((status, response_body.to_string()))
+        read_http_response(&mut stream)
     }
+}
+
+fn read_http_response(stream: &mut TcpStream) -> std::io::Result<(String, String)> {
+    let mut buffer = Vec::with_capacity(4096);
+    let mut chunk = [0u8; 1024];
+    let mut header_end = None;
+
+    while header_end.is_none() && buffer.len() < 64 * 1024 {
+        let read = stream.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+        header_end = find_subsequence(&buffer, b"\r\n\r\n");
+    }
+
+    let Some(header_end) = header_end else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "invalid Home Assistant response",
+        ));
+    };
+
+    let body_start = header_end + 4;
+    let headers = String::from_utf8_lossy(&buffer[..header_end]).to_string();
+    let status = headers.lines().next().unwrap_or_default().to_string();
+
+    if let Some(content_length) = header_content_length(&headers) {
+        let needed = body_start + content_length;
+        while buffer.len() < needed {
+            let read = stream.read(&mut chunk)?;
+            if read == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+        }
+        if buffer.len() < needed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "truncated Home Assistant response body",
+            ));
+        }
+        return Ok((
+            status,
+            String::from_utf8_lossy(&buffer[body_start..needed]).to_string(),
+        ));
+    }
+
+    Ok((
+        status,
+        String::from_utf8_lossy(buffer.get(body_start..).unwrap_or_default()).to_string(),
+    ))
+}
+
+fn header_content_length(headers: &str) -> Option<usize> {
+    headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.eq_ignore_ascii_case("content-length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    })
 }
 
 fn read_optional_secret(path: Option<&PathBuf>) -> Option<String> {
@@ -2317,7 +2371,7 @@ fn html() -> String {
 
 	    function sliderControl(device, label, action, value, suffix = '%', min = 0, max = 100) {
 	      const safeValue = Number(value || 0);
-	      return `<div class="control-row"><div class="control-label">${escapeHtml(label)}</div><input aria-label="${escapeHtml(device.name)}${escapeHtml(label)}" type="range" min="${min}" max="${max}" value="${safeValue}" data-action="${action}" data-id="${escapeHtml(device.id)}"><div class="control-value">${safeValue}${escapeHtml(suffix)}</div></div>`;
+	      return `<div class="control-row"><div class="control-label">${escapeHtml(label)}</div><input aria-label="${escapeHtml(device.name)}${escapeHtml(label)}" type="range" min="${min}" max="${max}" value="${safeValue}" data-action="${action}" data-id="${escapeHtml(device.id)}" data-suffix="${escapeHtml(suffix)}"><div class="control-value">${safeValue}${escapeHtml(suffix)}</div></div>`;
 	    }
 
 	    function colorControl(device) {
@@ -2668,6 +2722,18 @@ fn html() -> String {
 	      await loadDevices();
 	    }
 
+	    function updateRangePreview(target) {
+	      const row = target.closest('.control-row');
+	      const value = row ? row.querySelector('.control-value') : null;
+	      const suffix = target.dataset.suffix || '%';
+	      if (value) value.textContent = target.value + suffix;
+	      if (target.dataset.action === 'position') {
+	        const card = target.closest('.device-card');
+	        const state = card ? card.querySelector('.state-word') : null;
+	        if (state) state.textContent = target.value + suffix;
+	      }
+	    }
+
 	    document.addEventListener('click', event => {
 	      const target = event.target.closest('[data-action="toggle"]');
 	      if (!target || target.disabled) return;
@@ -2705,9 +2771,16 @@ fn html() -> String {
 	      }
 	    });
 
+	    document.addEventListener('input', event => {
+	      const target = event.target;
+	      if (!target.dataset.action || target.type !== 'range') return;
+	      updateRangePreview(target);
+	    });
+
 	    document.addEventListener('change', event => {
 	      const target = event.target;
 	      if (!target.dataset.action) return;
+	      if (target.type === 'range') updateRangePreview(target);
 	      const card = target.closest('.device-card');
 	      const kind = card ? card.dataset.kind : '';
 	      if (target.dataset.action === 'brightness') {

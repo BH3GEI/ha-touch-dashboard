@@ -37,6 +37,18 @@ test('dashboard renders real Xiaomi controls without fallback labels', async ({ 
     await expect(speakerCard.getByRole('button', { name: label })).toBeVisible();
   }
 
+  const curtainCard = page.locator('.device-card').filter({ hasText: '隔断帘' });
+  const curtainResponse = page.waitForResponse(
+    response => response.url().endsWith('/api/devices/curtain') && response.request().method() === 'POST',
+  );
+  await curtainCard.locator('input[data-action="position"]').evaluate(input => {
+    input.value = '0';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(curtainCard).toContainText('0%');
+  expect((await curtainResponse).status()).toBe(200);
+
   const wangwangCameraCard = page.locator('.device-card').filter({ hasText: '汪汪 小米智能摄像机 云台版2K' });
   await expect(wangwangCameraCard).toContainText('李尧家（摄像头） / 客厅');
   await expect(wangwangCameraCard.getByRole('button', { name: '尝试直播' })).toBeVisible();
