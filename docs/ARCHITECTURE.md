@@ -11,8 +11,10 @@ Touch dashboard browser
     -> Home Assistant REST API on :8123
       -> Xiaomi Home entities
       -> real TV / XiaoAI / AC / curtain / sensors
-    -> state.tsv persisted fallback device state
-    -> Home Assistant webhook on :8123 for fallback template sync
+      -> Xiaomi camera device state
+    -> Xiaomi Home local device cache for read-only devices without entities
+    -> go2rtc RTC camera pages from the local micam stack
+    -> explicit error if Home Assistant is unavailable
     -> HomeKit Bridge on :51827 and TV accessory on :51828
       -> Apple Home / Siri
 ```
@@ -27,14 +29,15 @@ Responsibilities:
 - Serve `GET /api/health`.
 - Serve `GET /api/devices`.
 - Accept `POST /api/devices/<id>` form updates.
+- Accept `POST /api/cameras/<id>/stream` and `/stop` for camera live-view
+  control.
 - When a Home Assistant token is available, read real Xiaomi entity states from
   `/api/states` and call HA services for controls.
-- Persist fallback state to `state.tsv`.
-- POST fallback device updates back into Home Assistant through:
-
-```text
-/api/webhook/virtual_mijia_bridge_state_b53b516a99ba5cf173601fd8ff7298e0
-```
+- Read Xiaomi Home's local device cache for devices that exist in Xiaomi Home
+  but expose no Home Assistant entity, such as the Wi-Fi repeater.
+- Keep `state.tsv` only for old local debugging endpoints.
+- Never show local debug devices on the main dashboard when Home Assistant is
+  unavailable.
 
 The implementation intentionally has no third-party Rust dependencies. This
 keeps the bridge small, fast to build, and easy to audit on a Mac mini.
@@ -45,17 +48,7 @@ Source: `ha/virtual_mijia.yaml`
 
 It defines:
 
-- `rest_command.virtual_mijia_update` for fallback HA -> Rust updates.
-- `input_boolean`, `input_number`, and `input_select` fallback helpers.
-- Template entities:
-  - `light.virtual_mijia_desk_lamp`
-  - `fan.virtual_mijia_air_purifier`
-  - `switch.virtual_mijia_tv`
-  - `switch.virtual_mijia_ac_companion`
-  - `switch.virtual_mijia_xiaoai_scene`
-- Automations for HA -> Rust sync.
-- A webhook automation for Rust -> HA sync.
-- `input_boolean.virtual_mijia_sync_guard` to prevent sync loops.
+- Siri/HomeKit scripts for one-shot Xiaomi actions.
 - Scripts for Siri/HomeKit actions:
   - `script.mijia_tv_volume_up`
   - `script.mijia_tv_volume_down`
@@ -66,6 +59,25 @@ It defines:
   Siri scripts on TCP `51827`.
 - A separate TV HomeKit accessory on TCP `51828` because HomeKit requires
   television media players to run in accessory mode.
+
+## Camera Live View
+
+The Xiaomi Home integration exposes the cameras as MIoT action entities, not
+standard Home Assistant `camera.*` entities. The dashboard therefore uses a
+separate local stream bridge:
+
+- Miloco completes Xiaomi OAuth and provides local camera metadata from both
+  selected homes.
+- micam runs in the bridged Colima VM and connects to each camera with Xiaomi's
+  local/P2P protocol.
+- go2rtc receives two RTSP producers, `wangwang` and `mimi`, and exposes
+  browser-playable RTC pages at `/stream.html?src=...`.
+- The Rust bridge maps `camera_wangwang` and `camera_mimi` to those go2rtc
+  pages from `POST /api/cameras/<id>/stream`.
+
+`GO2RTC_BASE_URL` can override the go2rtc address. When it is not set, the Rust
+bridge tries to read the current Colima bridged IP from `colima status --json`
+and falls back to the checked-in default.
 
 ## Dashboard
 

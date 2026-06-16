@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -12,6 +13,13 @@ use serde_json::{json, Value};
 
 const DEFAULT_HA_ADDR: &str = "127.0.0.1:8123";
 const DEFAULT_HA_TOKEN_FILE: &str = "/Users/mac/HomeAssistantCore/HA-OWNER-ACCESS-TOKEN.txt";
+const DEFAULT_HA_REFRESH_TOKEN_FILE: &str =
+    "/Users/mac/HomeAssistantCore/HA-OWNER-REFRESH-TOKEN.txt";
+const DEFAULT_XIAOMI_HOME_DEVICE_CACHE: &str =
+    "/Users/mac/HomeAssistantCore/config/.storage/xiaomi_home/miot_devices";
+const HA_CLIENT_ID: &str = "http://127.0.0.1:8787/";
+const CAMERA_HOME: &str = "李尧家（摄像头）";
+const MAIN_HOME: &str = "李尧家（主设备）";
 
 const TV_ENTITY: &str =
     "media_player.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1";
@@ -22,10 +30,29 @@ const TEMPERATURE_ENTITY: &str = "sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_temp
 const HUMIDITY_ENTITY: &str =
     "sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_relative_humidity_p_2_1002";
 const BATTERY_ENTITY: &str = "sensor.xiaomi_cn_blt_3_1onep2uro4c03_mini_battery_level_p_3_1003";
+const CAMERA_MIMI_POWER: &str = "switch.chuangmi_cn_1212440277_039c01_on_p_2_1";
+const CAMERA_MIMI_STATUS: &str = "sensor.chuangmi_cn_1212440277_039c01_status_p_4_1";
+const CAMERA_MIMI_INDICATOR: &str = "light.chuangmi_cn_1212440277_039c01_s_3_indicator_light";
+const CAMERA_WANGWANG_POWER: &str = "switch.chuangmi_cn_2115992412_029a02_on_p_2_1";
+const CAMERA_WANGWANG_STATUS: &str = "sensor.chuangmi_cn_2115992412_029a02_status_p_4_1";
+const CAMERA_WANGWANG_STREAM_STATUS: &str =
+    "sensor.chuangmi_cn_2115992412_029a02_stream_status_p_7_9";
+const CAMERA_WANGWANG_INDICATOR: &str = "light.chuangmi_cn_2115992412_029a02_s_3_indicator_light";
+const DEFAULT_GO2RTC_BASE_URL: &str = "http://192.168.3.8:1984";
 const TV_VOLUME_UP_BUTTON: &str =
     "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_volume_up_a_7_12";
 const TV_VOLUME_DOWN_BUTTON: &str =
     "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_volume_down_a_7_11";
+const TV_HOME_BUTTON: &str =
+    "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_home_a_7_2";
+const TV_BACK_BUTTON: &str =
+    "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_back_a_7_5";
+const TV_OK_BUTTON: &str =
+    "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_ok_a_7_10";
+const TV_PLAY_PAUSE_BUTTON: &str =
+    "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_press_play_pause_a_7_16";
+const TV_TURN_ON_BUTTON: &str =
+    "button.xiaomi_cn_mitv_c1640dcb988dac758708dcc723857a86_1ba845686779440d9ba27899df3c7997_v1_turn_on_a_6_1";
 const XIAOAI_WAKE_BUTTON: &str = "button.xiaomi_cn_2037162573_x4b_wake_up_a_5_1";
 const XIAOAI_RADIO_BUTTON: &str = "button.xiaomi_cn_2037162573_x4b_play_radio_a_5_2";
 const XIAOAI_MUSIC_BUTTON: &str = "button.xiaomi_cn_2037162573_x4b_play_music_a_5_5";
@@ -51,7 +78,10 @@ type SharedDevices = Arc<Mutex<Vec<Device>>>;
 struct HaClient {
     addr: SocketAddr,
     host: String,
-    token: Option<String>,
+    token: Arc<Mutex<Option<String>>>,
+    token_file: Option<PathBuf>,
+    refresh_token: Arc<Mutex<Option<String>>>,
+    refresh_token_file: Option<PathBuf>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -110,32 +140,44 @@ impl HaClient {
                 .parse()
                 .expect("static Home Assistant address")
         });
+        let token_file = arg_value("--ha-token-file")
+            .or_else(|| env::var("HA_TOKEN_FILE").ok())
+            .map(PathBuf::from)
+            .or_else(|| Some(PathBuf::from(DEFAULT_HA_TOKEN_FILE)));
+        let refresh_token_file = arg_value("--ha-refresh-token-file")
+            .or_else(|| env::var("HA_REFRESH_TOKEN_FILE").ok())
+            .map(PathBuf::from)
+            .or_else(|| Some(PathBuf::from(DEFAULT_HA_REFRESH_TOKEN_FILE)));
         let token = arg_value("--ha-token")
             .or_else(|| env::var("HA_TOKEN").ok())
-            .or_else(|| {
-                let path = arg_value("--ha-token-file")
-                    .or_else(|| env::var("HA_TOKEN_FILE").ok())
-                    .unwrap_or_else(|| DEFAULT_HA_TOKEN_FILE.to_string());
-                fs::read_to_string(path)
-                    .ok()
-                    .map(|token| token.trim().to_string())
-            })
+            .or_else(|| read_optional_secret(token_file.as_ref()))
+            .filter(|token| !token.is_empty());
+        let refresh_token = arg_value("--ha-refresh-token")
+            .or_else(|| env::var("HA_REFRESH_TOKEN").ok())
+            .or_else(|| read_optional_secret(refresh_token_file.as_ref()))
             .filter(|token| !token.is_empty());
 
-        Self { addr, host, token }
+        Self {
+            addr,
+            host,
+            token: Arc::new(Mutex::new(token)),
+            token_file,
+            refresh_token: Arc::new(Mutex::new(refresh_token)),
+            refresh_token_file,
+        }
     }
 
     fn label(&self) -> String {
-        if self.token.is_some() {
+        if self.current_token().is_some() {
             format!("http://{} (token configured)", self.host)
         } else {
-            format!("http://{} (token missing, using local fallback)", self.host)
+            format!("http://{} (token missing)", self.host)
         }
     }
 
     fn dashboard_devices_json(&self) -> std::io::Result<String> {
         let states = self.states()?;
-        let devices = real_devices_from_states(&states);
+        let devices = dashboard_devices_from_states(&states);
         if devices.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -143,6 +185,11 @@ impl HaClient {
             ));
         }
         Ok(json!({"source":"home_assistant","devices":devices}).to_string())
+    }
+
+    fn dashboard_device_count(&self) -> std::io::Result<usize> {
+        let states = self.states()?;
+        Ok(dashboard_devices_from_states(&states).len())
     }
 
     fn update_real_device(
@@ -165,54 +212,25 @@ impl HaClient {
 
     fn update_tv(&self, params: &HashMap<String, String>) -> std::io::Result<()> {
         if let Some(on) = bool_param(params, "on") {
-            self.post_service(
-                "media_player",
-                if on { "turn_on" } else { "turn_off" },
-                json!({"entity_id": TV_ENTITY}),
-            )?;
+            if on {
+                self.press_button(TV_TURN_ON_BUTTON)?;
+            }
         }
         if let Some(action) = params.get("action").map(String::as_str) {
             match action {
                 "volume_up" => self.press_button(TV_VOLUME_UP_BUTTON)?,
                 "volume_down" => self.press_button(TV_VOLUME_DOWN_BUTTON)?,
-                "mute" => self.post_service(
-                    "media_player",
-                    "volume_mute",
-                    json!({"entity_id": TV_ENTITY, "is_volume_muted": true}),
-                )?,
-                "unmute" => self.post_service(
-                    "media_player",
-                    "volume_mute",
-                    json!({"entity_id": TV_ENTITY, "is_volume_muted": false}),
-                )?,
+                "home" => self.press_button(TV_HOME_BUTTON)?,
+                "back" => self.press_button(TV_BACK_BUTTON)?,
+                "ok" => self.press_button(TV_OK_BUTTON)?,
+                "play_pause" => self.press_button(TV_PLAY_PAUSE_BUTTON)?,
                 _ => {}
             }
-        }
-        if let Some(volume) = int_param(params, "volume").map(|value| value.clamp(0, 100)) {
-            self.post_service(
-                "media_player",
-                "volume_set",
-                json!({"entity_id": TV_ENTITY, "volume_level": (volume as f64 / 100.0)}),
-            )?;
         }
         Ok(())
     }
 
     fn update_xiaoai(&self, params: &HashMap<String, String>) -> std::io::Result<()> {
-        if let Some(volume) = int_param(params, "volume").map(|value| value.clamp(0, 100)) {
-            self.post_service(
-                "media_player",
-                "volume_set",
-                json!({"entity_id": XIAOAI_ENTITY, "volume_level": (volume as f64 / 100.0)}),
-            )?;
-        }
-        if let Some(on) = bool_param(params, "on") {
-            self.post_service(
-                "media_player",
-                if on { "turn_on" } else { "turn_off" },
-                json!({"entity_id": XIAOAI_ENTITY}),
-            )?;
-        }
         if let Some(action) = params.get("action").map(String::as_str) {
             match action {
                 "wake" => self.press_button(XIAOAI_WAKE_BUTTON)?,
@@ -301,6 +319,30 @@ impl HaClient {
         self.post_service("button", "press", json!({"entity_id": entity_id}))
     }
 
+    fn start_camera_stream(&self, id: &str, _quality: i64) -> std::io::Result<Value> {
+        match id {
+            "camera_wangwang" | "camera_mimi" => start_go2rtc_camera_stream(id),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "unknown camera",
+            )),
+        }
+    }
+
+    fn stop_camera_stream(&self, id: &str) -> std::io::Result<()> {
+        match id {
+            "camera_wangwang" | "camera_mimi" => Ok(()),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "unknown camera",
+            )),
+        }
+    }
+
+    fn current_token(&self) -> Option<String> {
+        self.token.lock().ok().and_then(|token| token.clone())
+    }
+
     fn states(&self) -> std::io::Result<Vec<Value>> {
         let body = self.request("GET", "/api/states", None)?;
         serde_json::from_str(&body)
@@ -318,26 +360,118 @@ impl HaClient {
     }
 
     fn request(&self, method: &str, path: &str, body: Option<&str>) -> std::io::Result<String> {
-        let Some(token) = self.token.as_ref() else {
+        let body = body.unwrap_or("");
+        let (status, response_body) =
+            self.request_once(method, path, body, "application/json", self.current_token())?;
+        if is_unauthorized(&status) {
+            self.refresh_access_token()?;
+            let (status, response_body) =
+                self.request_once(method, path, body, "application/json", self.current_token())?;
+            if !status.contains(" 2") {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Home Assistant returned {status}: {response_body}"),
+                ));
+            }
+            return Ok(response_body);
+        }
+        if !status.contains(" 2") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Home Assistant returned {status}: {response_body}"),
+            ));
+        }
+        Ok(response_body)
+    }
+
+    fn refresh_access_token(&self) -> std::io::Result<()> {
+        let refresh_token = self
+            .refresh_token
+            .lock()
+            .ok()
+            .and_then(|token| token.clone())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "Home Assistant refresh token is not configured",
+                )
+            })?;
+        let body = format!(
+            "grant_type=refresh_token&refresh_token={}&client_id={}",
+            form_encode(&refresh_token),
+            form_encode(HA_CLIENT_ID)
+        );
+        let (status, response_body) = self.request_once(
+            "POST",
+            "/auth/token",
+            &body,
+            "application/x-www-form-urlencoded",
+            None,
+        )?;
+        if !status.contains(" 2") {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
-                "Home Assistant token is not configured",
+                format!("Home Assistant token refresh failed: {status}: {response_body}"),
             ));
-        };
-        let body = body.unwrap_or("");
+        }
+        let value: Value = serde_json::from_str(&response_body)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        let access_token = value
+            .get("access_token")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Home Assistant token refresh response missed access_token",
+                )
+            })?
+            .to_string();
+        if let Ok(mut token) = self.token.lock() {
+            *token = Some(access_token.clone());
+        }
+        if let Some(path) = &self.token_file {
+            if let Err(err) = fs::write(path, &access_token) {
+                eprintln!("failed to persist refreshed Home Assistant access token: {err}");
+            }
+        }
+        if let Some(new_refresh_token) = value.get("refresh_token").and_then(Value::as_str) {
+            if let Ok(mut token) = self.refresh_token.lock() {
+                *token = Some(new_refresh_token.to_string());
+            }
+            if let Some(path) = &self.refresh_token_file {
+                if let Err(err) = fs::write(path, new_refresh_token) {
+                    eprintln!("failed to persist refreshed Home Assistant refresh token: {err}");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn request_once(
+        &self,
+        method: &str,
+        path: &str,
+        body: &str,
+        content_type: &str,
+        token: Option<String>,
+    ) -> std::io::Result<(String, String)> {
         let mut stream = TcpStream::connect_timeout(&self.addr, Duration::from_millis(900))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
         stream.set_read_timeout(Some(Duration::from_secs(3)))?;
 
+        let authorization = token
+            .map(|token| format!("Authorization: Bearer {token}\r\n"))
+            .unwrap_or_default();
         let request = format!(
             "{method} {path} HTTP/1.1\r\n\
              Host: {}\r\n\
-             Authorization: Bearer {}\r\n\
-             Content-Type: application/json\r\n\
+             {}\
+             Content-Type: {}\r\n\
              Content-Length: {}\r\n\
              Connection: close\r\n\r\n{}",
             self.host,
-            token,
+            authorization,
+            content_type,
             body.as_bytes().len(),
             body
         );
@@ -351,15 +485,32 @@ impl HaClient {
                 "invalid Home Assistant response",
             ));
         };
-        let status = headers.lines().next().unwrap_or_default();
-        if !status.contains(" 2") {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Home Assistant returned {status}: {response_body}"),
-            ));
-        }
-        Ok(response_body.to_string())
+        let status = headers.lines().next().unwrap_or_default().to_string();
+        Ok((status, response_body.to_string()))
     }
+}
+
+fn read_optional_secret(path: Option<&PathBuf>) -> Option<String> {
+    path.and_then(|path| fs::read_to_string(path).ok())
+        .map(|value| value.trim().to_string())
+}
+
+fn is_unauthorized(status: &str) -> bool {
+    status.contains(" 401 ")
+}
+
+fn form_encode(value: &str) -> String {
+    let mut output = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                output.push(byte as char)
+            }
+            b' ' => output.push('+'),
+            _ => output.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    output
 }
 
 fn is_real_device_id(id: &str) -> bool {
@@ -391,7 +542,8 @@ fn hvac_mode(mode: &str) -> Option<&'static str> {
 
 fn fan_mode_from_speed(speed: i64) -> &'static str {
     match speed.clamp(0, 100) {
-        0..=33 => "低",
+        0 => "自动",
+        1..=33 => "低",
         34..=66 => "中",
         _ => "高",
     }
@@ -399,6 +551,7 @@ fn fan_mode_from_speed(speed: i64) -> &'static str {
 
 fn speed_from_fan_mode(mode: &str) -> u8 {
     match mode {
+        "自动" => 0,
         "低" => 33,
         "中" => 66,
         "高" => 100,
@@ -406,8 +559,38 @@ fn speed_from_fan_mode(mode: &str) -> u8 {
     }
 }
 
+fn dashboard_devices_from_states(states: &[Value]) -> Vec<Value> {
+    let mut devices = real_devices_from_states(states);
+    append_cached_xiaomi_devices(&mut devices);
+    devices
+}
+
 fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
     let mut devices = Vec::new();
+
+    if let Some(camera) = camera_device(
+        states,
+        "camera_mimi",
+        "咪咪 小米智能摄像机2 云台版",
+        CAMERA_MIMI_POWER,
+        CAMERA_MIMI_STATUS,
+        Some(CAMERA_MIMI_INDICATOR),
+        None,
+    ) {
+        devices.push(camera);
+    }
+
+    if let Some(camera) = camera_device(
+        states,
+        "camera_wangwang",
+        "汪汪 小米智能摄像机 云台版2K",
+        CAMERA_WANGWANG_POWER,
+        CAMERA_WANGWANG_STATUS,
+        Some(CAMERA_WANGWANG_INDICATOR),
+        Some(CAMERA_WANGWANG_STREAM_STATUS),
+    ) {
+        devices.push(camera);
+    }
 
     if let Some(tv) = state_by_id(states, TV_ENTITY) {
         let volume = percent_from_volume(attr_f64(tv, "volume_level"));
@@ -416,6 +599,7 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
         devices.push(json!({
             "id": "real_tv",
             "name": "客厅的小米电视",
+            "home": MAIN_HOME,
             "room": "客厅",
             "kind": "tv",
             "on": entity_is_on(tv),
@@ -430,7 +614,7 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
             "mode": source,
             "note": format!("输入源 {} · {}", source, if muted { "已静音" } else { "声音开启" }),
             "online": entity_is_available(tv),
-            "readonly": false
+            "readonly": true
         }));
     }
 
@@ -439,7 +623,8 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
         let muted = attr_bool(speaker, "is_volume_muted").unwrap_or(false);
         devices.push(json!({
             "id": "xiaoai",
-            "name": "小爱家庭屏 mini",
+            "name": "Xiaomi 智能家庭屏 mini",
+            "home": MAIN_HOME,
             "room": "客厅",
             "kind": "speaker",
             "on": entity_is_available(speaker) && state_str(speaker) != "off",
@@ -452,9 +637,9 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
             "color": "#b692ff",
             "speed": 0,
             "mode": state_str(speaker),
-            "note": format!("音量 {}% · 可唤醒、播报和播放音乐", volume),
+            "note": format!("音量 {}% · 可唤醒、播放音乐/广播、播报文本", volume),
             "online": entity_is_available(speaker),
-            "readonly": false
+            "readonly": true
         }));
     }
 
@@ -465,6 +650,7 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
         devices.push(json!({
             "id": "real_ac",
             "name": "二楼主卧空调",
+            "home": MAIN_HOME,
             "room": "主卧",
             "kind": "climate",
             "on": entity_is_available(ac) && state != "off",
@@ -487,6 +673,7 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
         devices.push(json!({
             "id": "curtain",
             "name": "隔断帘",
+            "home": MAIN_HOME,
             "room": "厨房",
             "kind": "cover",
             "on": entity_is_available(curtain) && state_str(curtain) != "closed",
@@ -514,7 +701,8 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
             .unwrap_or(0.0);
         devices.push(json!({
             "id": "thermo",
-            "name": "米家温湿度计",
+            "name": "米家智能温湿度计3 mini",
+            "home": MAIN_HOME,
             "room": "厨房",
             "kind": "sensor",
             "on": entity_is_available(temp),
@@ -533,6 +721,129 @@ fn real_devices_from_states(states: &[Value]) -> Vec<Value> {
     }
 
     devices
+}
+
+fn camera_device(
+    states: &[Value],
+    id: &str,
+    name: &str,
+    power_entity: &str,
+    status_entity: &str,
+    indicator_entity: Option<&str>,
+    stream_status_entity: Option<&str>,
+) -> Option<Value> {
+    let power = state_by_id(states, power_entity)?;
+    let status = state_by_id(states, status_entity)
+        .map(state_str)
+        .unwrap_or("unknown");
+    let indicator = indicator_entity
+        .and_then(|entity_id| state_by_id(states, entity_id))
+        .map(state_str)
+        .unwrap_or("unknown");
+    let stream = stream_status_entity
+        .and_then(|entity_id| state_by_id(states, entity_id))
+        .map(state_str);
+    let note = match stream {
+        Some(stream) => format!("工作状态 {} · 流状态 {}", status, stream),
+        None => format!("工作状态 {} · 指示灯 {}", status, indicator),
+    };
+    Some(json!({
+        "id": id,
+        "name": name,
+        "home": CAMERA_HOME,
+        "room": "客厅",
+        "kind": "camera",
+        "on": entity_is_on(power),
+        "brightness": if entity_is_on(power) { 70 } else { 8 },
+        "volume": 0,
+        "temperature": 0,
+        "humidity": 0,
+        "position": 0,
+        "color": "#64748b",
+        "speed": 0,
+        "mode": status,
+        "note": note,
+        "online": entity_is_available(power),
+        "readonly": true,
+        "indicator": indicator,
+        "stream": stream.unwrap_or("未启用"),
+        "stream_capable": matches!(id, "camera_wangwang" | "camera_mimi"),
+        "stream_protocol": "rtc"
+    }))
+}
+
+fn append_cached_xiaomi_devices(devices: &mut Vec<Value>) {
+    let Ok(entries) = fs::read_dir(DEFAULT_XIAOMI_HOME_DEVICE_CACHE) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("dict") {
+            continue;
+        }
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        let Some(Ok(value)) = serde_json::Deserializer::from_str(&text)
+            .into_iter::<Value>()
+            .next()
+        else {
+            continue;
+        };
+        let Some(map) = value.as_object() else {
+            continue;
+        };
+        for device in map.values() {
+            if device.get("model").and_then(Value::as_str) != Some("xiaomi.repeater.v3") {
+                continue;
+            }
+            let id = format!(
+                "xiaomi_cache_{}",
+                device
+                    .get("did")
+                    .and_then(Value::as_str)
+                    .unwrap_or("repeater")
+            );
+            if devices
+                .iter()
+                .any(|item| item.get("id").and_then(Value::as_str) == Some(id.as_str()))
+            {
+                continue;
+            }
+            let online = device
+                .get("online")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let name = device
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("小米 Wi-Fi 放大器");
+            let room = device
+                .get("room_name")
+                .and_then(Value::as_str)
+                .unwrap_or("未分配");
+            devices.push(json!({
+                "id": id,
+                "name": name,
+                "home": MAIN_HOME,
+                "room": room,
+                "kind": "network",
+                "on": online,
+                "brightness": if online { 72 } else { 10 },
+                "volume": 0,
+                "temperature": 0,
+                "humidity": 0,
+                "position": 0,
+                "color": "#0f766e",
+                "speed": 0,
+                "mode": if online { "online" } else { "offline" },
+                "note": "Xiaomi Home 在线设备 · 暂无可控实体",
+                "online": online,
+                "readonly": true
+            }));
+        }
+    }
 }
 
 fn state_by_id<'a>(states: &'a [Value], entity_id: &str) -> Option<&'a Value> {
@@ -585,6 +896,105 @@ fn percent_from_volume(volume: Option<f64>) -> u8 {
 
 fn one_decimal(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
+}
+
+fn start_go2rtc_camera_stream(id: &str) -> std::io::Result<Value> {
+    let (camera, src) = match id {
+        "camera_wangwang" => ("camera_wangwang", "wangwang"),
+        "camera_mimi" => ("camera_mimi", "mimi"),
+        _ => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "unknown camera",
+            ))
+        }
+    };
+    let base_url = go2rtc_base_url();
+    let info_url = format!("{base_url}/api/streams?src={src}");
+    let info = fetch_json_url(&info_url)?;
+    let has_producer = info
+        .get("producers")
+        .and_then(Value::as_array)
+        .map(|producers| !producers.is_empty())
+        .unwrap_or(false);
+    if !has_producer {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "本地摄像头流还没有就绪，请确认 micam 容器正在运行",
+        ));
+    }
+    let playback_url = format!("{base_url}/stream.html?src={src}");
+    let rtsp_url = format!("rtsp://{}/{}", go2rtc_rtsp_host(), src);
+    Ok(json!({
+        "ok": true,
+        "camera": camera,
+        "protocol": "rtc",
+        "stream_url": rtsp_url,
+        "playback_url": playback_url
+    }))
+}
+
+fn go2rtc_base_url() -> String {
+    env::var("GO2RTC_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(detect_colima_go2rtc_base_url)
+        .unwrap_or_else(|| DEFAULT_GO2RTC_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn detect_colima_go2rtc_base_url() -> Option<String> {
+    for binary in ["/opt/homebrew/bin/colima", "colima"] {
+        let Ok(output) = Command::new(binary).args(["status", "--json"]).output() else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let Ok(status) = serde_json::from_slice::<Value>(&output.stdout) else {
+            continue;
+        };
+        if let Some(ip) = status
+            .get("ip_address")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|ip| !ip.is_empty())
+        {
+            return Some(format!("http://{ip}:1984"));
+        }
+    }
+    None
+}
+
+fn go2rtc_rtsp_host() -> String {
+    let base = go2rtc_base_url();
+    let host = base
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&base)
+        .split('/')
+        .next()
+        .unwrap_or("192.168.3.8:1984");
+    let hostname = host.split(':').next().unwrap_or(host);
+    format!("{hostname}:8554")
+}
+
+fn fetch_json_url(url: &str) -> std::io::Result<Value> {
+    let output = Command::new("curl")
+        .args(["-sS", "--fail", "--max-time", "3", "--", url])
+        .output()?;
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr)
+            .trim()
+            .lines()
+            .last()
+            .unwrap_or("request failed")
+            .to_string();
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, error));
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
 fn handle_client(
@@ -680,31 +1090,84 @@ fn route_request(
     }
 
     if method == "GET" && path == "/api/health" {
-        let count = devices.lock().map(|devices| devices.len()).unwrap_or(0);
-        let ha = if ha_client.token.is_some() {
-            "configured"
-        } else {
-            "not_configured"
+        return match ha_client.dashboard_device_count() {
+            Ok(count) => (
+                "200 OK",
+                "application/json; charset=utf-8",
+                format!(r#"{{"ok":true,"devices":{count},"home_assistant":"connected"}}"#),
+            ),
+            Err(err) => (
+                "200 OK",
+                "application/json; charset=utf-8",
+                format!(
+                    r#"{{"ok":false,"devices":0,"home_assistant":"error","error":"{}"}}"#,
+                    escape_json(&err.to_string())
+                ),
+            ),
         };
-        return (
-            "200 OK",
-            "application/json; charset=utf-8",
-            format!(r#"{{"ok":true,"devices":{count},"home_assistant":"{ha}"}}"#),
-        );
     }
 
     if method == "GET" && path == "/api/devices" {
-        if let Ok(json) = ha_client.dashboard_devices_json() {
-            return ("200 OK", "application/json; charset=utf-8", json);
-        }
-        let json = devices
-            .lock()
-            .map(|devices| devices_json(&devices))
-            .unwrap_or_else(|_| r#"{"devices":[]}"#.to_string());
-        return ("200 OK", "application/json; charset=utf-8", json);
+        return match ha_client.dashboard_devices_json() {
+            Ok(json) => ("200 OK", "application/json; charset=utf-8", json),
+            Err(err) => (
+                "502 Bad Gateway",
+                "application/json; charset=utf-8",
+                format!(
+                    r#"{{"ok":false,"devices":[],"error":"{}"}}"#,
+                    escape_json(&err.to_string())
+                ),
+            ),
+        };
     }
 
     if method == "POST" {
+        if let Some(rest) = path.strip_prefix("/api/cameras/") {
+            let mut parts = rest.split('/');
+            let id = parts.next().unwrap_or_default();
+            let action = parts.next().unwrap_or_default();
+            let params = parse_form(body);
+            return match action {
+                "stream" => match ha_client
+                    .start_camera_stream(id, int_param(&params, "quality").unwrap_or(2))
+                {
+                    Ok(value) => (
+                        "200 OK",
+                        "application/json; charset=utf-8",
+                        value.to_string(),
+                    ),
+                    Err(err) => (
+                        "502 Bad Gateway",
+                        "application/json; charset=utf-8",
+                        format!(
+                            r#"{{"ok":false,"error":"{}"}}"#,
+                            escape_json(&err.to_string())
+                        ),
+                    ),
+                },
+                "stop" => match ha_client.stop_camera_stream(id) {
+                    Ok(()) => (
+                        "200 OK",
+                        "application/json; charset=utf-8",
+                        r#"{"ok":true}"#.to_string(),
+                    ),
+                    Err(err) => (
+                        "502 Bad Gateway",
+                        "application/json; charset=utf-8",
+                        format!(
+                            r#"{{"ok":false,"error":"{}"}}"#,
+                            escape_json(&err.to_string())
+                        ),
+                    ),
+                },
+                _ => (
+                    "404 Not Found",
+                    "application/json; charset=utf-8",
+                    r#"{"ok":false,"error":"unknown camera action"}"#.to_string(),
+                ),
+            };
+        }
+
         if let Some(id) = path.strip_prefix("/api/devices/") {
             let params = parse_form(body);
             if is_real_device_id(id) {
@@ -921,6 +1384,15 @@ fn write_response(
     content_type: &str,
     body: &str,
 ) -> std::io::Result<()> {
+    write_bytes_response(stream, status, content_type, body.as_bytes())
+}
+
+fn write_bytes_response(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+) -> std::io::Result<()> {
     let response = format!(
         "HTTP/1.1 {status}\r\n\
          Content-Type: {content_type}\r\n\
@@ -930,10 +1402,11 @@ fn write_response(
          Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
          Access-Control-Allow-Headers: Content-Type\r\n\
          Connection: close\r\n\r\n{}",
-        body.as_bytes().len(),
-        body
+        body.len(),
+        ""
     );
-    stream.write_all(response.as_bytes())
+    stream.write_all(response.as_bytes())?;
+    stream.write_all(body)
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -998,77 +1471,7 @@ fn save_devices(path: &PathBuf, devices: &[Device]) -> std::io::Result<()> {
 }
 
 fn default_devices() -> Vec<Device> {
-    vec![
-        Device {
-            id: "desk_lamp".to_string(),
-            name: "米家台灯".to_string(),
-            room: "书桌".to_string(),
-            kind: "light".to_string(),
-            on: false,
-            brightness: 65,
-            color: "#ffd36b".to_string(),
-            speed: 0,
-            mode: "warm".to_string(),
-            note: "亮度映射到台灯色块".to_string(),
-        },
-        Device {
-            id: "air_purifier".to_string(),
-            name: "米家空气净化器".to_string(),
-            room: "客厅".to_string(),
-            kind: "fan".to_string(),
-            on: false,
-            brightness: 0,
-            color: "#7bd389".to_string(),
-            speed: 35,
-            mode: "auto".to_string(),
-            note: "风速越高，色块脉冲越快".to_string(),
-        },
-        Device {
-            id: "tv".to_string(),
-            name: "米家电视".to_string(),
-            room: "客厅".to_string(),
-            kind: "tv".to_string(),
-            on: false,
-            brightness: 35,
-            color: "#60a5fa".to_string(),
-            speed: 0,
-            mode: "media".to_string(),
-            note: "音量映射到电视控制".to_string(),
-        },
-        Device {
-            id: "ac_companion".to_string(),
-            name: "米家空调伴侣".to_string(),
-            room: "卧室".to_string(),
-            kind: "climate".to_string(),
-            on: false,
-            brightness: 24,
-            color: "#38bdf8".to_string(),
-            speed: 45,
-            mode: "cool".to_string(),
-            note: "温度、模式和风量映射到空调伴侣".to_string(),
-        },
-        Device {
-            id: "xiaoai_scene".to_string(),
-            name: "小爱音箱场景".to_string(),
-            room: "语音".to_string(),
-            kind: "switch".to_string(),
-            on: false,
-            brightness: 75,
-            color: "#b692ff".to_string(),
-            speed: 0,
-            mode: "scene".to_string(),
-            note: "模拟“小爱执行场景”开关".to_string(),
-        },
-    ]
-}
-
-fn devices_json(devices: &[Device]) -> String {
-    let devices = devices
-        .iter()
-        .map(device_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(r#"{{"devices":[{devices}]}}"#)
+    Vec::new()
 }
 
 fn device_json(device: &Device) -> String {
@@ -1634,6 +2037,59 @@ fn html() -> String {
 	      color: var(--muted);
 	      font-size: 13px;
 	    }
+	    .camera-stage {
+	      display: grid;
+	      gap: 10px;
+	    }
+	    .camera-player,
+	    .camera-placeholder {
+	      width: 100%;
+	      aspect-ratio: 16 / 9;
+	      border: 1px solid #d8e0ea;
+	      border-radius: var(--radius);
+	      background: #0f172a;
+	      overflow: hidden;
+	    }
+	    .camera-player {
+	      display: block;
+	      object-fit: cover;
+	    }
+	    .camera-placeholder {
+	      display: grid;
+	      place-items: center;
+	      padding: 12px;
+	      color: #dbeafe;
+	      font-size: 14px;
+	      font-weight: 720;
+	      text-align: center;
+	    }
+	    .camera-status {
+	      min-height: 20px;
+	      color: var(--muted);
+	      font-size: 12px;
+	      font-weight: 680;
+	    }
+	    .camera-status[data-tone="error"] {
+	      color: #b42318;
+	    }
+	    .camera-actions {
+	      display: grid;
+	      grid-template-columns: repeat(3, minmax(0, 1fr));
+	      gap: 8px;
+	    }
+	    .stream-link {
+	      display: inline-flex;
+	      align-items: center;
+	      justify-content: center;
+	      min-height: 48px;
+	      border: 1px solid var(--line);
+	      border-radius: var(--radius);
+	      background: #fff;
+	      color: #344054;
+	      font-size: 14px;
+	      font-weight: 740;
+	      text-decoration: none;
+	    }
     .note {
       display: flex;
       align-items: center;
@@ -1754,15 +2210,15 @@ fn html() -> String {
           <button class="scene-button" data-scene="all-off" style="--scene-color:#64748b;--scene-border:#cbd5e1;--scene-bg:#f8fafc">
             <span class="scene-icon" aria-hidden="true">□</span><span class="scene-copy"><strong>全关</strong><span>离家或睡前快速收束</span></span>
           </button>
-          <button class="scene-button" data-scene="movie" style="--scene-color:var(--cyan);--scene-border:#67e8f9;--scene-bg:#ecfeff">
-            <span class="scene-icon" aria-hidden="true">▣</span><span class="scene-copy"><strong>影院</strong><span>电视开启，主灯压暗</span></span>
-          </button>
-          <button class="scene-button" data-scene="night" style="--scene-color:var(--amber);--scene-border:#fcd34d;--scene-bg:#fffbeb">
-            <span class="scene-icon" aria-hidden="true">☾</span><span class="scene-copy"><strong>夜间</strong><span>低亮度，净化器轻档</span></span>
-          </button>
-          <button class="scene-button" data-scene="purify" style="--scene-color:var(--violet);--scene-border:#c4b5fd;--scene-bg:#f5f3ff">
-            <span class="scene-icon" aria-hidden="true">✦</span><span class="scene-copy"><strong>净化强档</strong><span>空气净化器满速运行</span></span>
-          </button>
+	          <button class="scene-button" data-scene="movie" style="--scene-color:var(--cyan);--scene-border:#67e8f9;--scene-bg:#ecfeff">
+	            <span class="scene-icon" aria-hidden="true">▣</span><span class="scene-copy"><strong>影院</strong><span>电视开启，窗帘半开</span></span>
+	          </button>
+	          <button class="scene-button" data-scene="night" style="--scene-color:var(--amber);--scene-border:#fcd34d;--scene-bg:#fffbeb">
+	            <span class="scene-icon" aria-hidden="true">☾</span><span class="scene-copy"><strong>夜间</strong><span>电视关闭，窗帘收起</span></span>
+	          </button>
+	          <button class="scene-button" data-scene="curtain-half" style="--scene-color:var(--violet);--scene-border:#c4b5fd;--scene-bg:#f5f3ff">
+	            <span class="scene-icon" aria-hidden="true">✦</span><span class="scene-copy"><strong>窗帘半开</strong><span>隔断帘移动到中段</span></span>
+	          </button>
         </div>
       </section>
       <section aria-labelledby="overview-title">
@@ -1786,6 +2242,10 @@ fn html() -> String {
 	    const statusEl = document.getElementById('status');
 	    let lastJson = '';
 	    let currentDevices = [];
+	    const activeCameraStreams = new Map();
+	    const cameraStreamMessages = new Map();
+	    const hlsPlayers = new Map();
+	    let hlsLoader = null;
 
 	    function clamp(value, min, max) {
 	      return Math.max(min, Math.min(max, value));
@@ -1805,10 +2265,6 @@ fn html() -> String {
 	      return currentDevices.some(device => device.id === id);
 	    }
 
-	    function mappedId(realId, fallbackId) {
-	      return hasDevice(realId) ? realId : fallbackId;
-	    }
-
 	    function deviceSymbol(device) {
 	      if (device.kind === 'light') return '▱';
 	      if (device.kind === 'fan') return '✺';
@@ -1817,6 +2273,8 @@ fn html() -> String {
 	      if (device.kind === 'speaker') return '◉';
 	      if (device.kind === 'cover') return '▥';
 	      if (device.kind === 'sensor') return '℃';
+	      if (device.kind === 'camera') return '◌';
+	      if (device.kind === 'network') return '⌁';
 	      return '▦';
 	    }
 
@@ -1828,6 +2286,8 @@ fn html() -> String {
 	      if (device.kind === 'speaker') return '小爱';
 	      if (device.kind === 'cover') return '窗帘';
 	      if (device.kind === 'sensor') return '环境';
+	      if (device.kind === 'camera') return '摄像头';
+	      if (device.kind === 'network') return '网络';
 	      return '场景';
 	    }
 
@@ -1867,18 +2327,23 @@ fn html() -> String {
 	    function tvControls(device) {
 	      const volume = Number(device.volume || device.brightness || 0);
 	      return `
-	        ${sliderControl(device, '音量', 'volume', volume)}
+	        <div class="control-row"><div class="control-label">音量</div><div></div><div class="control-value">${volume}%</div></div>
 	        <div class="action-buttons" aria-label="${escapeHtml(device.name)}音量快捷控制">
-	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="${device.muted ? 'unmute' : 'mute'}">${device.muted ? '取消静音' : '静音'}</button>
 	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="volume_down">-</button>
 	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="volume_up">+</button>
+	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="play_pause">播放</button>
+	        </div>
+	        <div class="action-buttons" aria-label="${escapeHtml(device.name)}遥控快捷控制">
+	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="home">主页</button>
+	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="ok">确定</button>
+	          <button class="mini-button" data-action="tv-action" data-id="${escapeHtml(device.id)}" data-command="back">返回</button>
 	        </div>`;
 	    }
 
 	    function speakerControls(device) {
 	      const volume = Number(device.volume || device.brightness || 0);
 	      return `
-	        ${sliderControl(device, '音量', 'volume', volume)}
+	        <div class="control-row"><div class="control-label">音量</div><div></div><div class="control-value">${volume}%</div></div>
 	        <div class="action-buttons" aria-label="${escapeHtml(device.name)}快捷控制">
 	          <button class="mini-button" data-action="speaker-action" data-id="${escapeHtml(device.id)}" data-command="wake">唤醒</button>
 	          <button class="mini-button" data-action="speaker-action" data-id="${escapeHtml(device.id)}" data-command="music">音乐</button>
@@ -1902,6 +2367,50 @@ fn html() -> String {
 	        <div class="sensor-readout">
 	          <div class="sensor-tile"><strong>${Number(device.temperature || 0).toFixed(1)}°C</strong><span>温度</span></div>
 	          <div class="sensor-tile"><strong>${Number(device.humidity || 0)}%</strong><span>湿度</span></div>
+	        </div>`;
+	    }
+
+	    function cameraControls(device) {
+	      const streamUrl = activeCameraStreams.get(device.id);
+	      const streamMessage = cameraStreamMessages.get(device.id);
+	      const statusLine = streamMessage
+	        ? `<div class="camera-status" data-camera-status="${escapeHtml(device.id)}" data-tone="${escapeHtml(streamMessage.tone || 'info')}">${escapeHtml(streamMessage.text)}</div>`
+	        : '';
+	      const capable = Boolean(device.stream_capable);
+	      if (!capable) {
+	        return `
+	          <div class="sensor-readout">
+	            <div class="sensor-tile"><strong>${escapeHtml(device.mode || '未知')}</strong><span>工作状态</span></div>
+	            <div class="sensor-tile"><strong>未配置</strong><span>直播状态</span></div>
+	          </div>
+	          <div class="camera-placeholder">本地直播未配置</div>`;
+	      }
+	      const player = streamUrl
+	        ? (streamUrl.includes('/stream.html?')
+	          ? `<iframe class="camera-player" data-camera-frame="${escapeHtml(device.id)}" src="${escapeHtml(streamUrl)}" allow="autoplay; fullscreen" loading="eager"></iframe>`
+	          : `<video class="camera-player" data-camera-video="${escapeHtml(device.id)}" data-stream-url="${escapeHtml(streamUrl)}" controls autoplay muted playsinline></video>`)
+	        : `<div class="camera-placeholder">${escapeHtml(streamMessage?.text || '轻触尝试拉取画面')}</div>`;
+	      return `
+	        <div class="sensor-readout">
+	          <div class="sensor-tile"><strong>${escapeHtml(device.mode || '未知')}</strong><span>工作状态</span></div>
+	          <div class="sensor-tile"><strong>${escapeHtml(device.stream || device.indicator || '未知')}</strong><span>${device.stream ? '流状态' : '指示灯'}</span></div>
+	        </div>
+	        <div class="camera-stage">
+	          ${player}
+	          ${statusLine}
+	          <div class="camera-actions">
+	            <button class="mini-button" data-action="camera-stream" data-id="${escapeHtml(device.id)}">尝试直播</button>
+	            <button class="mini-button" data-action="camera-stop" data-id="${escapeHtml(device.id)}">停止</button>
+	            ${streamUrl ? `<a class="stream-link" href="${escapeHtml(streamUrl)}" target="_blank" rel="noreferrer">画面源</a>` : `<button class="mini-button" disabled>待机</button>`}
+	          </div>
+	        </div>`;
+	    }
+
+	    function networkControls(device) {
+	      return `
+	        <div class="sensor-readout">
+	          <div class="sensor-tile"><strong>${device.online ? '在线' : '离线'}</strong><span>连接状态</span></div>
+	          <div class="sensor-tile"><strong>${escapeHtml(device.mode || '设备')}</strong><span>型号</span></div>
 	        </div>`;
 	    }
 
@@ -1943,6 +2452,12 @@ fn html() -> String {
 	      if (device.kind === 'sensor') {
 	        return sensorControls(device);
 	      }
+	      if (device.kind === 'camera') {
+	        return cameraControls(device);
+	      }
+	      if (device.kind === 'network') {
+	        return networkControls(device);
+	      }
 	      return `<div class="control-row"><div class="control-label">场景</div><div></div><div class="control-value">${device.on ? '执行中' : '待机'}</div></div>`;
 	    }
 
@@ -1952,12 +2467,16 @@ fn html() -> String {
 	      if (device.kind === 'climate') return device.on ? clamp(device.speed || 45, 18, 100) : 8;
 	      if (device.kind === 'cover') return clamp(device.position || device.brightness || 0, 12, 100);
 	      if (device.kind === 'sensor') return 70;
+	      if (device.kind === 'camera') return device.on ? 70 : 12;
+	      if (device.kind === 'network') return device.online ? 72 : 12;
 	      if (device.kind === 'switch') return device.on ? 76 : 8;
 	      return device.brightness;
 	    }
 
 	    function stateWord(device) {
 	      if (device.kind === 'sensor') return Number(device.temperature || 0).toFixed(1) + '°C';
+	      if (device.kind === 'camera') return escapeHtml(device.mode || (device.on ? '在线' : '关闭'));
+	      if (device.kind === 'network') return device.online ? '在线' : '离线';
 	      if (device.kind === 'cover') return Number(device.position || 0) + '%';
 	      if (device.kind === 'climate') return device.on ? climateModeLabel(device.mode) : '关闭';
 	      if (device.kind === 'speaker') return device.online ? '待命' : '离线';
@@ -1984,7 +2503,7 @@ fn html() -> String {
 	            <div class="device-head">
 	              <div>
 	                <div class="device-name-row"><h2>${escapeHtml(device.name)}</h2><span class="online">${onlineText}</span></div>
-	                <div class="room">${escapeHtml(device.room)} · ${deviceTypeLabel(device)}</div>
+	                <div class="room">${escapeHtml(device.home ? device.home + ' / ' : '')}${escapeHtml(device.room)} · ${deviceTypeLabel(device)}</div>
 	                <div class="state-word">${stateWord(device)}</div>
 	              </div>
 	              ${powerControl}
@@ -1997,6 +2516,36 @@ fn html() -> String {
 	        </article>`;
 	    }
 
+	    function destroyCameraPlayer(id) {
+	      const hls = hlsPlayers.get(id);
+	      if (hls) {
+	        hls.destroy();
+	        hlsPlayers.delete(id);
+	      }
+	    }
+
+	    function destroyCameraPlayers() {
+	      hlsPlayers.forEach(hls => hls.destroy());
+	      hlsPlayers.clear();
+	    }
+
+	    function renderDevices() {
+	      destroyCameraPlayers();
+	      summaryCards(currentDevices);
+	      grid.innerHTML = currentDevices.map(deviceCard).join('');
+	      hydrateCameraPlayers();
+	    }
+
+	    function updateCameraStatus(id, text, tone = 'info') {
+	      cameraStreamMessages.set(id, { text, tone });
+	      document.querySelectorAll('[data-camera-status]').forEach(element => {
+	        if (element.dataset.cameraStatus === id) {
+	          element.textContent = text;
+	          element.dataset.tone = tone;
+	        }
+	      });
+	    }
+
 	    async function loadDevices() {
 	      const response = await fetch('/api/devices', { cache: 'no-store' });
 	      if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -2004,11 +2553,107 @@ fn html() -> String {
 	      if (json !== lastJson) {
 	        const data = JSON.parse(json);
 	        currentDevices = data.devices || [];
-	        summaryCards(currentDevices);
-	        grid.innerHTML = currentDevices.map(deviceCard).join('');
+	        renderDevices();
 	        lastJson = json;
 	      }
 	      statusEl.textContent = '已连接 ' + new Date().toLocaleTimeString();
+	    }
+
+	    function loadHlsLibrary() {
+	      if (window.Hls) return Promise.resolve(window.Hls);
+	      if (hlsLoader) return hlsLoader;
+	      hlsLoader = new Promise((resolve, reject) => {
+	        const script = document.createElement('script');
+	        script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js';
+	        script.async = true;
+	        script.onload = () => resolve(window.Hls);
+	        script.onerror = () => {
+	          hlsLoader = null;
+	          reject(new Error('播放器加载失败'));
+	        };
+	        document.head.appendChild(script);
+	      });
+	      return hlsLoader;
+	    }
+
+	    async function attachCameraVideo(video) {
+	      const streamUrl = video.dataset.streamUrl;
+	      const cameraId = video.dataset.cameraVideo;
+	      if (!streamUrl || video.dataset.ready === 'true') return;
+	      video.dataset.ready = 'true';
+	      updateCameraStatus(cameraId, '正在缓冲直播');
+	      video.addEventListener('playing', () => updateCameraStatus(cameraId, '直播中'), { once: true });
+	      video.addEventListener('error', () => updateCameraStatus(cameraId, '画面加载失败，画面源可能已断开', 'error'));
+	      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+	        video.src = streamUrl;
+	      } else {
+	        const Hls = await loadHlsLibrary();
+	        if (!Hls || !Hls.isSupported()) {
+	          throw new Error('当前环境暂时不能播放这个画面源');
+	        }
+	        destroyCameraPlayer(cameraId);
+	        const hls = new Hls({
+	          lowLatencyMode: false,
+	          manifestLoadingMaxRetry: 8,
+	          manifestLoadingRetryDelay: 700,
+	          levelLoadingMaxRetry: 8,
+	          fragLoadingMaxRetry: 8,
+	          fragLoadingRetryDelay: 700
+	        });
+	        hls.on(Hls.Events.ERROR, (_event, data) => {
+	          if (data?.fatal) {
+	            updateCameraStatus(cameraId, '画面源连接失败，已停止播放器', 'error');
+	            hls.destroy();
+	          }
+	        });
+	        hlsPlayers.set(cameraId, hls);
+	        hls.loadSource(streamUrl);
+	        hls.attachMedia(video);
+	      }
+	      video.play().catch(() => {});
+	    }
+
+	    function hydrateCameraPlayers() {
+	      document.querySelectorAll('[data-camera-frame]').forEach(frame => {
+	        updateCameraStatus(frame.dataset.cameraFrame, '直播中');
+	      });
+	      document.querySelectorAll('[data-camera-video]').forEach(video => {
+	        attachCameraVideo(video).catch(error => {
+	          updateCameraStatus(video.dataset.cameraVideo, error.message || '播放器启动失败', 'error');
+	          showError(error);
+	        });
+	      });
+	    }
+
+	    async function startCameraStream(id) {
+	      updateCameraStatus(id, '正在打开本地摄像头流');
+	      renderDevices();
+	      const body = new URLSearchParams({ quality: 2 });
+	      const response = await fetch('/api/cameras/' + encodeURIComponent(id) + '/stream', {
+	        method: 'POST',
+	        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+	        body
+	      });
+	      const data = await response.json();
+	      if (!response.ok || !data.ok) throw new Error(data.error || ('HTTP ' + response.status));
+	      activeCameraStreams.set(id, data.playback_url || data.stream_url);
+	      updateCameraStatus(id, data.protocol === 'rtc' ? '正在打开实时画面' : '正在等待画面分片');
+	      lastJson = '';
+	      await loadDevices();
+	    }
+
+	    async function stopCameraStream(id) {
+	      const response = await fetch('/api/cameras/' + encodeURIComponent(id) + '/stop', {
+	        method: 'POST',
+	        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+	        body: ''
+	      });
+	      const data = await response.json();
+	      if (!response.ok || !data.ok) throw new Error(data.error || ('HTTP ' + response.status));
+	      destroyCameraPlayer(id);
+	      activeCameraStreams.delete(id);
+	      cameraStreamMessages.set(id, { text: '直播已停止', tone: 'info' });
+	      renderDevices();
 	    }
 
 	    async function updateDevice(id, params) {
@@ -2030,7 +2675,7 @@ fn html() -> String {
 	    });
 
 	    document.addEventListener('click', event => {
-	      const target = event.target.closest('[data-action="tv-action"],[data-action="speaker-action"],[data-action="cover-action"],[data-action="temp-step"],[data-action="mode"]');
+	      const target = event.target.closest('[data-action="tv-action"],[data-action="speaker-action"],[data-action="cover-action"],[data-action="camera-stream"],[data-action="camera-stop"],[data-action="temp-step"],[data-action="mode"]');
 	      if (!target) return;
 	      if (target.dataset.action === 'tv-action') {
 	        updateDevice(target.dataset.id, { action: target.dataset.command, on: true }).catch(showError);
@@ -2040,6 +2685,16 @@ fn html() -> String {
 	      }
 	      if (target.dataset.action === 'cover-action') {
 	        updateDevice(target.dataset.id, { action: target.dataset.command }).catch(showError);
+	      }
+	      if (target.dataset.action === 'camera-stream') {
+	        const id = target.dataset.id;
+	        startCameraStream(id).catch(error => {
+	          updateCameraStatus(id, error.message || '直播启动失败', 'error');
+	          showError(error);
+	        });
+	      }
+	      if (target.dataset.action === 'camera-stop') {
+	        stopCameraStream(target.dataset.id).catch(showError);
 	      }
 	      if (target.dataset.action === 'temp-step') {
 	        const temperature = Number(target.dataset.current || 24) + Number(target.dataset.delta || 0);
@@ -2079,46 +2734,32 @@ fn html() -> String {
 	    });
 
 	    async function applyScene(scene, trigger) {
-	      const realMode = hasDevice('real_tv') || hasDevice('xiaoai') || hasDevice('real_ac') || hasDevice('curtain');
-	      const tv = mappedId('real_tv', 'tv');
-	      const ac = mappedId('real_ac', 'ac_companion');
-	      const speaker = hasDevice('xiaoai') ? 'xiaoai' : (realMode ? '' : 'xiaoai_scene');
-	      const curtain = mappedId('curtain', '');
-	      const lamp = realMode ? '' : 'desk_lamp';
-	      const purifier = realMode ? '' : 'air_purifier';
+	      const tv = hasDevice('real_tv') ? 'real_tv' : '';
+	      const ac = hasDevice('real_ac') ? 'real_ac' : '';
+	      const curtain = hasDevice('curtain') ? 'curtain' : '';
 	      const scenes = {
 	        'all-on': [
-	          [lamp, { on: true, brightness: 90, color: '#ffd36b', note: '网页快捷操作：全开' }],
-	          [purifier, { on: true, speed: 55, note: '网页快捷操作：全开' }],
 	          [tv, { on: true, volume: 35, note: '网页快捷操作：全开' }],
 	          [ac, { on: true, temperature: 24, speed: 50, mode: 'cool', note: '网页快捷操作：全开' }],
-	          [speaker, { on: true, action: hasDevice('xiaoai') ? 'wake' : undefined, brightness: 90, note: '网页快捷操作：全开' }],
 	          [curtain, { action: 'open' }]
 	        ],
 	        'all-off': [
-	          [lamp, { on: false, brightness: 25, note: '网页快捷操作：全关' }],
-	          [purifier, { on: false, speed: 0, note: '网页快捷操作：全关' }],
 	          [tv, { on: false, volume: 0, note: '网页快捷操作：全关' }],
 	          [ac, { on: false, temperature: 24, speed: 0, mode: 'cool', note: '网页快捷操作：全关' }],
 	          [curtain, { action: 'close' }]
 	        ],
 	        'movie': [
-	          [lamp, { on: false, brightness: 12, color: '#f97316', note: '网页快捷操作：影院模式' }],
-	          [purifier, { on: true, speed: 25, note: '网页快捷操作：影院模式' }],
 	          [tv, { on: true, volume: 32, note: '网页快捷操作：影院模式' }],
 	          [ac, { on: true, temperature: 25, speed: 25, mode: 'cool', note: '网页快捷操作：影院模式' }],
-	          [speaker, { on: true, action: hasDevice('xiaoai') ? 'music' : undefined, brightness: 65, color: '#b692ff', note: '网页快捷操作：影院模式' }],
 	          [curtain, { position: 18 }]
 	        ],
 	        'night': [
-	          [lamp, { on: true, brightness: 18, color: '#f97316', note: '网页快捷操作：夜间模式' }],
-	          [purifier, { on: true, speed: 18, note: '网页快捷操作：夜间模式' }],
 	          [tv, { on: false, volume: 0, note: '网页快捷操作：夜间模式' }],
 	          [ac, { on: true, temperature: 26, speed: 20, mode: 'cool', note: '网页快捷操作：夜间模式' }],
 	          [curtain, { position: 0 }]
 	        ],
-	        'purify': [
-	          [hasDevice('curtain') ? 'curtain' : purifier, hasDevice('curtain') ? { position: 50 } : { on: true, speed: 100, note: '网页快捷操作：净化器强档' }]
+	        'curtain-half': [
+	          [curtain, { position: 50 }]
 	        ]
 	      };
 	      if (trigger) trigger.classList.add('is-running');

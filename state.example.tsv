@@ -1,5 +1,1 @@
-desk_lamp	米家台灯	书桌	light	0	65	#ffd36b	0	warm	亮度映射到台灯色块
-air_purifier	米家空气净化器	客厅	fan	0	0	#7bd389	35	auto	风速越高，色块脉冲越快
-tv	米家电视	客厅	tv	0	35	#60a5fa	0	media	音量映射到电视控制
-ac_companion	米家空调伴侣	卧室	climate	0	24	#38bdf8	45	cool	温度、模式和风量映射到空调伴侣
-xiaoai_scene	小爱音箱场景	语音	switch	0	75	#b692ff	0	scene	模拟“小爱执行场景”开关
+

@@ -8,4 +8,8 @@ launchd.out
 launchd.err
 panel.png
 state.tsv
+runtime/
+.env
+.env.local
+.env.*.local
 .DS_Store

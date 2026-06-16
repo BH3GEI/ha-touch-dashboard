@@ -1,9 +1,8 @@
 # HA Touch Dashboard
 
 Touch-first Rust dashboard for local Home Assistant, Xiaomi Home, HomeKit, and
-Siri control. It exposes a web control panel, a small HTTP API, direct
-Home Assistant service calls for real Xiaomi entities, and a local fallback
-state path.
+Siri control. It exposes a web control panel, a small HTTP API, and direct
+Home Assistant service calls for real Xiaomi entities.
 
 - Web panel: `http://127.0.0.1:8787`
 - LAN panel: `http://192.168.3.37:8787`
@@ -17,9 +16,8 @@ state path.
 - 二楼主卧空调
 - 隔断帘
 - 米家温湿度计
-
-If the Home Assistant token is unavailable, the dashboard falls back to the
-local `state.tsv` demo devices instead of rendering a blank page.
+- 两台小米摄像机，通过本地 Miloco + micam + go2rtc 链路在 Dashboard 内播放
+- 客厅小米 Wi-Fi 放大器 Pro 只读状态卡
 
 The dashboard is optimized for touch screens: large scene buttons, large power
 targets, thick sliders, clear state words, and a mobile bottom action dock.
@@ -65,9 +63,13 @@ Install `ha/virtual_mijia.yaml` into:
 /Users/mac/HomeAssistantCore/config/packages/virtual_mijia.yaml
 ```
 
-The package defines the local fallback template entities, HA -> Rust REST
-commands, Rust -> HA webhook sync guard, HomeKit bridge filters, and Siri-ready
-scripts for TV volume and XiaoAI actions.
+The package defines HomeKit bridge filters and Siri-ready scripts for TV volume
+and XiaoAI actions. It does not create placeholder devices.
+
+Camera live view runs through the local micam stack in `deploy/micam/`.
+Miloco handles Xiaomi account/device metadata, micam pulls each camera stream
+inside the bridged Colima VM, and go2rtc exposes browser-playable RTC pages
+that the Rust dashboard embeds after the user presses "尝试直播".
 
 For the full setup path, see `docs/DEPLOYMENT.md`.
 

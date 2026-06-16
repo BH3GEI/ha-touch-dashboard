@@ -1,0 +1,64 @@
+services:
+  miloco:
+    container_name: micam-miloco
+    image: ghcr.nju.edu.cn/miiot/miloco:main
+    network_mode: host
+    environment:
+      BACKEND_PORT: ${MILOCO_PORT:-8000}
+      BACKEND_LOG_LEVEL: ${MILOCO_LOG_LEVEL:-warning}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: ["python3", "/app/start_http_server.py"]
+    volumes:
+      - ./miloco:/app/miloco_server/.temp
+      - ./miloco-http-start.py:/app/start_http_server.py:ro
+    restart: unless-stopped
+
+  go2rtc:
+    container_name: micam-go2rtc
+    image: ghcr.nju.edu.cn/alexxit/go2rtc
+    network_mode: host
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./go2rtc:/config
+    restart: unless-stopped
+
+  micam-wangwang:
+    container_name: micam-wangwang
+    image: ghcr.nju.edu.cn/miiot/micam:main
+    network_mode: host
+    depends_on:
+      - miloco
+      - go2rtc
+    profiles:
+      - streaming
+    environment:
+      MILOCO_BASE_URL: ${MILOCO_BASE_URL:-http://miloco:8000}
+      MILOCO_PASSWORD: ${MILOCO_PASSWORD}
+      CAMERA_ID: ${CAMERA_ID}
+      RTSP_URL: ${RTSP_URL}
+      VIDEO_CODEC: ${VIDEO_CODEC:-h264}
+      STREAM_CHANNEL: ${STREAM_CHANNEL:-0}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: ["micam", "--video-codec", "${VIDEO_CODEC:-h264}"]
+    restart: unless-stopped
+
+  micam-mimi:
+    container_name: micam-mimi
+    image: ghcr.nju.edu.cn/miiot/micam:main
+    network_mode: host
+    depends_on:
+      - miloco
+      - go2rtc
+    profiles:
+      - mimi
+    environment:
+      MILOCO_BASE_URL: ${MILOCO_BASE_URL:-http://miloco:8000}
+      MILOCO_PASSWORD: ${MILOCO_PASSWORD}
+      CAMERA_ID: ${CAMERA_2_ID}
+      RTSP_URL: ${CAMERA_2_RTSP_URL}
+      VIDEO_CODEC: ${CAMERA_2_VIDEO_CODEC:-h264}
+      STREAM_CHANNEL: ${CAMERA_2_STREAM_CHANNEL:-0}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: ["micam", "--video-codec", "${CAMERA_2_VIDEO_CODEC:-h264}"]
+    restart: unless-stopped

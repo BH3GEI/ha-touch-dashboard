@@ -99,6 +99,44 @@ Manual run:
   --ha-token-file /Users/mac/HomeAssistantCore/HA-OWNER-ACCESS-TOKEN.txt
 ```
 
+## Camera Stream Stack
+
+The camera live view uses the local micam stack instead of Home Assistant's
+native camera frontend. Runtime files live outside the repo:
+
+```text
+/Users/mac/HomeAssistantBridge/micam
+```
+
+Colima must run in bridged mode so the Mac browser can reach go2rtc inside the
+Linux VM:
+
+```bash
+colima status --json
+```
+
+Copy the committed template once, then keep the real `.env` private:
+
+```bash
+mkdir -p /Users/mac/HomeAssistantBridge/micam
+cp deploy/micam/docker-compose.yml deploy/micam/miloco-http-start.py \
+  /Users/mac/HomeAssistantBridge/micam/
+cp deploy/micam/.env.example /Users/mac/HomeAssistantBridge/micam/.env
+mkdir -p /Users/mac/HomeAssistantBridge/micam/go2rtc
+```
+
+After Miloco has a Xiaomi login and admin password hash in the private `.env`,
+start both camera stream profiles:
+
+```bash
+cd /Users/mac/HomeAssistantBridge/micam
+docker compose --env-file .env --profile streaming --profile mimi up -d
+```
+
+The Rust bridge reads `GO2RTC_BASE_URL` when set. If it is unset, it tries to
+detect the current bridged Colima IP from `colima status --json`, then falls
+back to the checked-in default.
+
 ## Launchd Services
 
 Copy the examples:
@@ -134,6 +172,8 @@ Dashboard:      http://127.0.0.1:8787/
 LAN dashboard:  http://192.168.3.37:8787/
 Health API:     http://127.0.0.1:8787/api/health
 Home Assistant: http://127.0.0.1:8123/
+go2rtc:         http://<colima-ip>:1984/
+Miloco:         http://<colima-ip>:8000/
 HomeKit bridge: TCP 51827
 HomeKit TV accessory: TCP 51828
 ```
